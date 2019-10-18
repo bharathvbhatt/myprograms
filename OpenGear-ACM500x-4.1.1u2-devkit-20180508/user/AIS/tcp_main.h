@@ -8,7 +8,7 @@
 /*Add function declarations and header files needed for the programs*/
 #include <sys/time.h>
 #include <signal.h>
-#include <unistd.h>     // for pause
+#include <unistd.h>     
 #include <stdio.h>
 #include "stdlib.h"
 #include <string.h>

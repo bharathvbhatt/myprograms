@@ -23,32 +23,42 @@
  *
  ***********************************************************************************************************************************************/
 statetranstion_en Currentst=state_init;
-int main()
+int main(int argc , char * argv[])
 {
 	printf("AIS Software .......!:\n");
 
-	while (True)
+	if(argc > 1)
 	{
-		switch (Currentst)
+		if((strstr(argv,"-Version"))!=NULL)
 		{
-		case state_init : usbinit();
-			              init_tcp();
-			              file_initilization();
-                          Currentst=state_main;
-		                  break;
-
-		case state_main : usb_statemachine();
-
-		                  break;
-
-		case state_err  :
-			              break;
-
-		default         : break;
+			printf("GIT VERSION - %s\n", GIT_VERSION);
 		}
+	}
 
+	else{
+		while (True)
+		{
+
+			switch (Currentst)
+			{
+			case state_init : usbinit();
+			init_tcp();
+			file_initilization();
+			Currentst=state_main;
+			break;
+
+			case state_main : usb_statemachine();
+
+			break;
+
+			case state_err  :
+				break;
+
+			default         : break;
+			}
+
+		}
 	}
 	return (0);
 }
-
 /****************************************************************************************************************************************/

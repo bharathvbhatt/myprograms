@@ -23,7 +23,7 @@ typedef struct
 
 typedef enum {
 
-	//clinet_mypc1,
+	/*clinet_mypc1,*/
 	clinet_mypc2,
     server_web,
 	max_data
