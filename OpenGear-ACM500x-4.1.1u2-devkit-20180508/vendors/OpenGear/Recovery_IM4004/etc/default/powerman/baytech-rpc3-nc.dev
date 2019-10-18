@@ -1,0 +1,77 @@
+#
+# $Id: baytech-rpc3-nc.dev,v 1.1 2010-11-17 06:01:01 anad Exp $
+#
+# Baytech RPC3-20NC
+#
+# Tested the following firmware versions:
+#   RPC3-NC Series (C) 2002 by BayTech F4.00
+#   RPC-3/4(A)DE Series (C) 2004 BayTech F1.08 (req. powerman 1.0.24 telnet)
+# 
+# Note:
+#   Type ";;;;;" to access "network interface module".
+#   Prompt is not returned until device is ready to accept another commmand.
+#
+# Assumes:
+#   Command confirmation : disabled
+#   Status menu : disabled
+#   No access control
+#
+specification "baytech-rpc3-nc" {
+	timeout 	10   # about 5 sec for cycle command
+
+	plug name { "1" "2" "3" "4" "5" "6" "7" "8" }
+
+	script login {
+		send "\r\n"
+		expect ">"
+	}
+	script logout {
+		send "exit\r\n"
+	}
+	script status_all {
+		# XXX this works around bug where foreachplug
+		# counter doesn't reset when script restarts after reconnect
+		send "\r\n"
+		expect ">"
+		# XXX end workaround
+		send "status\r\n"
+		foreachplug {
+			expect "Outlet  ([0-9]+)[^:0-9]+: (On|Off)"
+			setplugstate $1 $2 on="On" off="Off"
+		}
+		expect ">"
+	}
+	script on {
+		send "on %s\r\n"
+		expect ">"
+	}
+	script on_all {
+		send "on 0\r\n"
+		expect ">"
+	}
+	script off {
+		send "off %s\r\n"
+		expect ">"
+	}
+	script off_all {
+		send "off 0\r\n"
+		expect ">"
+	}
+# If outlet is initially off, "reboot" will leave it off.
+# This doesn't match PowerMan's semantics for cycle, so explicitly power
+# off then on.
+	script cycle {
+		send "off %s\r\n"
+		expect ">"
+		delay 4
+		send "on %s\r\n"
+		expect ">"
+	}
+	script cycle_all {
+		send "off 0\r\n"
+		expect ">"
+		delay 4
+		send "on 0\r\n"
+		expect ">"
+	}
+}

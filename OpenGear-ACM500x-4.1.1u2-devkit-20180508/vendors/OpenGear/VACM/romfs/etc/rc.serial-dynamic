@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# fix up the serial port mappings.  Remove ports that will not be used
+# like the modem and dedicated console ports.
+#
+
+MODEL="$1"
+
+# clear the serial config file,  we will rebuild it
+
+> /var/run/serial-ports
+
+# Allow non-root users to enumerate serial ports
+chmod a+r /var/run/serial-ports
+
+# all the /dev/portNN files are symlinks to /var/dev/portNN
+# we must make the /var/dev/portNN dev nodes here
+
+# Use PTYs for serial ports on virtual ACM
+for (( p=1; p <= 4; p++ )); do
+	PNAME=`printf "port%02d" $p`
+	
+	# Init logfile
+	logfile="/var/log/socat-${PNAME}.log"
+	> "$logfile"
+
+	# Create pty pair and glean names
+	socat -lf "$logfile" -d -d pty pty &
+	while sleep 1; do
+		ptynums=`grep "PTY is" "$logfile" | sed 's/.*\///g'`
+		pm_ptynum=`echo $ptynums | cut -f1 -d' '`
+		script_ptynum=`echo $ptynums | cut -f2 -d' '`
+		[ -n "$pm_ptynum" ] && [ -n "$script_ptynum" ] && break
+	done
+	
+	# Set up files for portmanager
+	chmod 660 /dev/pts/$pm_ptynum
+	TNAME="pts/$pm_ptynum"
+	echo "$PNAME --> $TNAME" >> /var/run/serial-ports
+	ln -sf /dev/pts/$pm_ptynum /dev/$PNAME
+	
+	# Set up files for dummy console script
+	ln -sf /dev/pts/$script_ptynum /dev/.dummy-console-$p
+	infod_client -s -o push -p config.ports.port$p\.dev.deflabel -d "Port $p" &
+	infod_client -s -o push -p config.ports.port$p\.dev.typedesc -d "8p8c" &
+done

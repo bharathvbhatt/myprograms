@@ -1,0 +1,139 @@
+#!/bin/sh
+
+setup_interface () {
+	local device="$1"
+
+	# Apply RA_MTU only if unspecified by user
+	# odhcp6c program defaults RA_MTU to zero
+	if [ ! -e /etc/config/.mtu/${device}_specified -a "$RA_MTU" -gt 0 ]; then
+		mtu=`cat /sys/class/net/${device}/mtu`
+		if [ -n "$mtu" -a ! "$RA_MTU" -eq "$mtu" ]; then
+			ip link set dev $device mtu $RA_MTU
+		fi
+	fi
+
+	local prefixpart=""
+	for entry in $PREFIXES; do
+		local addr="${entry%%,*}"
+		entry="${entry#*,}"
+                local preferred="${entry%%,*}"
+		entry="${entry#*,}"
+                local valid="${entry%%,*}"
+                entry="${entry#*,}"
+		[ "$entry" = "$valid" ] && entry=
+
+		local class=""
+		local excluded=""
+
+		while [ -n "$entry" ]; do
+			local key="${entry%%=*}"
+			entry="${entry#*=}"
+			local val="${entry%%,*}"
+			entry="${entry#*,}"
+			[ "$entry" = "$val" ] && entry=
+
+			if [ "$key" = "class" ]; then
+				class=", \"class\": $val"
+			elif [ "$key" = "excluded" ]; then
+				excluded=", \"excluded\": \"$val\""
+			fi
+		done
+
+		local prefix="{\"address\": \"$addr\", \"preferred\": $preferred, \"valid\": $valid $class $excluded}"
+
+		if [ -z "$prefixpart" ]; then
+			prefixpart="$prefix"
+		else
+			prefixpart="$prefixpart, $prefix"
+		fi
+
+		# TODO: delete this somehow when the prefix disappears
+		ip -6 route add unreachable "$addr"
+	done
+
+	#ip -6 route flush dev "$device"
+	ip -6 address flush dev "$device" dynamic scope global
+
+	# Merge addresses
+	for entry in $RA_ADDRESSES; do
+		local duplicate=0
+		local addr="${entry%%/*}"
+		for dentry in $ADDRESSES; do
+			local daddr="${dentry%%/*}"
+			[ "$addr" = "$daddr" ] && duplicate=1
+		done
+		[ "$duplicate" = "0" ] && ADDRESSES="$ADDRESSES $entry"
+	done
+
+	for entry in $ADDRESSES; do
+		local addr="${entry%%,*}"
+		entry="${entry#*,}"
+		local preferred="${entry%%,*}"
+		entry="${entry#*,}"
+		local valid="${entry%%,*}"
+
+		ifconfig "${device}" | grep -q "${addr}" || \
+			ip -6 address add "$addr" dev "$device" preferred_lft "$preferred" valid_lft "$valid"
+	done
+
+	# Parse and add routes into the main routing table whereas
+	# conman takes care of interface-specific ones since only
+	# conman knows their table IDs
+	for entry in $RA_ROUTES; do
+		local addr="${entry%%,*}"
+		entry="${entry#*,}"
+		local gw="${entry%%,*}"
+		entry="${entry#*,}"
+		local valid="${entry%%,*}"
+		entry="${entry#*,}"
+		local metric="${entry%%,*}"
+
+		if ! ip -6 route show | grep -q ${addr} ; then
+			if [ -n "$gw" ]; then
+				ip -6 route add "$addr" via "$gw" metric "$metric" dev "$device" from "::/128"
+			else
+				ip -6 route add "$addr" metric "$metric" dev "$device"
+			fi
+		fi
+
+		for prefix in $PREFIXES; do
+			local paddr="${prefix%%,*}"
+			[ -n "$gw" ] && ip -6 route add "$addr" via "$gw" metric "$metric" dev "$device" from "$paddr"
+		done
+	done
+}
+
+teardown_interface() {
+	local device="$1"
+	#ip -6 route flush dev "$device"
+	ip -6 address flush dev "$device" dynamic scope global
+
+	for entry in $ADDRESSES; do
+		local addr="${entry%%,*}"
+		entry="${entry#*,}"
+		local preferred="${entry%%,*}"
+		entry="${entry#*,}"
+		local valid="${entry%%,*}"
+
+		# Remove stateful DHCPv6 address instead of any SLAAC ones
+		# WARNING! : this may get rid of other /128 addresses on top of the intended ones
+		echo "${addr}" | grep -q "/128" && \
+			ip -6 address add "$addr" dev "$device" preferred_lft "$preferred" valid_lft "$valid"
+	done
+}
+
+case "$2" in
+	bound)
+		teardown_interface "$1"
+		setup_interface "$1"
+	;;
+	informed|updated|rebound|ra-updated)
+		setup_interface "$1"
+	;;
+	stopped|unbound)
+		teardown_interface "$1"
+	;;
+	started)
+		teardown_interface "$1"
+	;;
+esac

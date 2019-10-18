@@ -1,0 +1,90 @@
+#!/bin/sh
+
+GREP="/bin/grep"
+CONFIG="/bin/config"
+CUT="/usr/bin/cut"
+SED="/bin/sed"
+
+sync() {
+	name=$1
+	desc=$2
+	gid=$3
+	users=$4
+
+	match="$($GREP "^$name:" /etc/group)"
+
+	if [ -z "$match" ]; then
+		addgroup -g ${gid} ${name}
+		if [ -n "$users" ]; then
+			(
+				IFS=","
+				for user in ${users};do
+					addgroup ${user} ${name}
+				done
+			)
+		fi
+	elif [ $gid != $(echo "$match" | $CUT -f 3 -d ':') ]; then
+		# Change clashing user configured group name
+		while true; do
+			new_name="${name}$RANDOM"
+			if ! $GREP "^$new_name:" /etc/group; then
+				break
+			fi
+		done
+
+		# Update per-group config DB
+		arg="$($CONFIG -g config.groups | $GREP " ${name}$" | $SED "s/ ${name}$/=${new_name}/")"
+		$CONFIG -s "$arg"
+
+		# Update per-user config DB
+		args=$($CONFIG -g config.users | $GREP "^config\.users\.user[0-9]*\.groups\.group[0-9]* ${name}$")
+		ifs="$IFS"
+		IFS=$'\n'
+		for arg in $args; do
+			arg="$(echo $arg | $SED "s/ ${name}$/=${new_name}/")"
+			$CONFIG -s "$arg"
+		done
+		IFS="$ifs"
+
+		# Update group file
+		$SED -i "s/^${name}:/${new_name}:/" /etc/config/group
+		addgroup -g ${gid} ${name}
+		if [ -n "$users" ]; then
+			(
+				IFS=","
+				for user in ${users};do
+					addgroup ${user} ${name}
+				done
+			)
+		fi
+	fi
+
+	match="$($CONFIG -g config.groups | $GREP " ${name}$")"
+	if [ -z "$match" ]; then
+		total=$($CONFIG -g config.groups.total | cut -f2- -d' ')
+		if [ -z "$total" ]; then
+			total=0
+		fi
+		total=$(($total + 1))
+		$CONFIG -s "config.groups.group$total.name=$name" \
+			-s "config.groups.group$total.description=$desc" \
+			-s "config.groups.total=$total"
+	fi
+}
+
+sync root "Default system super user group" 0 root
+sync admin "Provides users with unlimited configuration and management privileges" 1 root
+sync nobody "Provides users with minimal privileges" 2 root
+if [ -e /lib/security/pam_adduser.so ]; then
+	sync netgrp "Group for users created automatically via network authentication" 3 root
+fi
+if [ -e /bin/upsd -a -e /lib/libusb.so ]; then
+	sync usb "Group to allow USB access to NUT UPS service" 4 root,ups
+fi
+if [ -e /bin/upsd ]; then
+	sync serial "Group to allow serial access to NUT UPS service" 5 root,ups
+fi
+if [ -e /bin/nagios ]; then
+	sync nagcmd "Group to allow access to the Nagios command file" 6 root,nagios
+fi
+sync users "Provides users with basic management privileges" 1000 root

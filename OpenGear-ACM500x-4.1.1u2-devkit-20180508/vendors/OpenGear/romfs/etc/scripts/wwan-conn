@@ -1,0 +1,177 @@
+#!/bin/bash
+# This script is invoked by conman to bring a cellular data link up.
+# It stays running while the data link is alive, periodically asking
+# cellctl if the datalink is still up.
+#
+# Importantly, it matches up "cellctl --dip_connect" with "cellctl -d"
+# which respectively start and stop any helper processes.
+set +e
+
+if [ -x /etc/config/scripts/wwan-conn ]; then
+	. /etc/config/scripts/wwan-conn
+	exit 0
+fi
+
+# Write a syslog message
+log () {
+	logger -t "wwan-conn[$$]" "$@"
+}
+
+# Handle conman sending us a SIGTERM
+on_term() {
+	log "got SIGTERM"
+	disconnect
+	exit 1
+}
+
+on_int() {
+	log "got SIGINT"
+	disconnect
+	exit 1
+}
+
+on_hup() {
+	log "got SIGHUP"
+}
+
+on_chld() {
+	log " got SIGCHLD"
+}
+
+# shut down the connection
+disconnect()
+{
+	# Disconnecting (either received a signal or lost connection) so remove modem backoff state
+	rm -f /var/run/.modem/retry_count
+
+	if [ "$(infod_client -q -o get -p config.cellmodem.cellctl.status.session-state)" == "INVALID" ]; then
+		log "$MODEM is not connecting to network, cannot stop data session"
+		exit 1
+	fi
+
+	# Push updated connection status to infod
+	infod_client -o push -p config.cellmodem.status -d "disconnected"
+
+	log "$MODEM: disconnecting"
+	if [ "$CONNECTED" == "1" ]; then
+		if ! /bin/cellctl -d; then
+			log "$MODEM: disconnect failed"
+		fi
+	fi
+
+	infod_client -o push -p config.cellmodem.status -d "disconnected"
+}
+
+# Start the connection
+connect () {
+
+	if /bin/cellctl --connstatus
+	then
+		logger "data session is already established, is another wwan-conn running?"
+	fi
+
+	if [ "$(infod_client -q -o get -p config.cellmodem.cellctl.status.session-state)" == "INVALID" ]; then
+		log "$MODEM is not connecting to network, cannot start data session"
+		exit 1
+	fi
+
+	if [ -f /var/run/.modem/cellmodem_is_gobi ]; then
+		# The MC7354 can get into a state when roaming (e.g. US SIM in Canada)
+		# where it cannot see availible operators, AT+COPS=? updates
+		# this list and breaks it out of the deadlock so it can connect. 
+		cc=`/bin/cellctl -s`
+		rs=`echo "$cc" | grep 'roaming-status ' | cut -d' ' -f2-`
+		sm=`echo "$cc" | grep 'service-mode ' | cut -d' ' -f2-`
+		# AT+COPS=? can take minutes to run in some circumstances,
+		# so only run it when required as it blocks modem ops
+		if [ "$rs" == "Roaming" -a "$sm" == "No service" ]; then
+			log "$MODEM is roaming, forcing update of carrier list (this may take a while)"
+			for (( i=0; i<3; ++i )) ; do
+				COPS=$( ( COMMAND="AT+COPS=?" RESPONSE="OK" /bin/chat -t 120 -E -V -f /etc/scripts/command-chat < /dev/cellcommand01 > /dev/cellcommand01 ) 2>&1 )
+				RC="$?"
+				OUT=`echo "$COPS" | grep -v '^$'`
+				ERROR=$( echo "$OUT" | grep '+CME ERROR:' )
+				GREP="$?"
+				log "$MODEM carrier list: $OUT"
+				if [ "$RC" == "0" -a "$GREP" != "0" ]; then
+					log "$MODEM carrier list updated: $OUT"
+					break
+				fi
+				log "$MODEM carrier list update failed"
+				sleep 1
+			done
+		fi
+	fi
+
+	# Remove any old backoff state
+	rm -f /var/run/.modem/retry_count
+
+	# Push status to infod - 'connecting'. This will be updated by wwan-up script
+	# when connection is up
+	# (cellctl --dip_connect starts udhcpc which runs wwan-up)
+	infod_client -o push -p config.cellmodem.status -d "connecting"
+
+	while [ 1 ]
+	do
+		if /bin/cellctl --dip_connect --auth $AUTH --apn "$APN" --apn_type $APNTYPE \
+			${USERNAME:+--username "$USERNAME" --password "$PASSWORD"}
+		then
+			# wwan-up script will eventually get called
+			log "$MODEM: connected"
+			CONNECTED=1
+
+			# Connected successfully so remove modem backoff state
+			rm -f /var/run/.modem/retry_count
+
+			return 0
+		fi
+		/etc/scripts/modem-backoff
+	done
+
+	return 1
+}
+
+# Load configuration
+CONN_NAME=$1
+
+source /etc/config/$CONN_NAME.cfg
+
+if read pid </var/run/wwan-$MODEM.pid && kill $pid; then
+   log killed $pid
+   sleep 3
+fi 2>/dev/null
+
+echo $$ > /var/run/wwan-$MODEM.pid
+trap "rm -f /var/run/wwan-$MODEM.pid" 0
+
+# Handle SIGTERM as a request to disconnect
+trap 'on_term' TERM
+trap 'on_int' INT
+trap 'on_hup' HUP
+trap 'on_chld' CHLD
+
+# Removed: conman will select the sim
+# Select SIM if relevant
+#/etc/scripts/sim_select
+
+# Start Connection
+if ! connect; then
+	# If connection failed, soft reset modem and try again
+	sleep 15 & wait
+	if ! connect; then
+		log "$MODEM: failed to connect"
+		exit 1
+	fi
+fi
+
+# Wait for the connection to drop
+while [ "$(infod_client -q -o get -p config.cellmodem.cellctl.status.session-state)" == "CONNECTED" ]; do
+	sleep 30 & wait	# allows immediate TERM handling
+	#log "$0 with PID $$ still running loop..."
+	/bin/cellctl --connstatus
+done
+
+log "$MODEM: lost connection"
+disconnect
+/bin/cellctl --connstatus
+exit 1

@@ -1,0 +1,5 @@
+https:unknown:/bin/stunnel /etc/config/https.conf
+sshd:unknown:/bin/sshd -r -D -o AllowUsers=* -o AllowTcpForwarding=yes -o SDT=yes
+dial:unknown:/bin/pppd call dialout.console persist nodetach
+zebra:unknown:/bin/zebra
+ripd:unknown:/bin/ripd

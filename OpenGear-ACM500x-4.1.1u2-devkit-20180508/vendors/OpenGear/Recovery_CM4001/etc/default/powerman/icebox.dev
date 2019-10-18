@@ -1,0 +1,93 @@
+#
+# $Id: icebox.dev,v 1.1 2010-11-17 05:46:11 anad Exp $
+#
+# Linux Networx ICE box firmware version 2.x on port 1010.
+#
+specification "icebox" {
+	timeout 	20 # accomodate 14 sec plus "cycle *" time */
+
+	plug name { "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" }
+
+	script login {
+		expect "V2[^\n]*\r\n"
+		send "auth icebox\r\n"
+		expect "OK\r\n"
+	}
+	script logout {
+		send "q\r\n"
+	}
+	script status_all {
+		send "ps *\r\n"
+		expect "N1:([01]) N2:([01]) N3:([01]) N4:([01]) N5:([01]) N6:([01]) N7:([01]) N8:([01]) N9:([01]) N10:([01])[[:space:]]*\r\n"
+		setplugstate "1" $1 off="0" on="1"
+		setplugstate "2" $2 off="0" on="1"
+		setplugstate "3" $3 off="0" on="1"
+		setplugstate "4" $4 off="0" on="1"
+		setplugstate "5" $5 off="0" on="1"
+		setplugstate "6" $6 off="0" on="1"
+		setplugstate "7" $7 off="0" on="1"
+		setplugstate "8" $8 off="0" on="1"
+		setplugstate "9" $9 off="0" on="1"
+		setplugstate "10" $10 off="0" on="1"
+	}
+	script status_temp_all {
+		send "ts *\r\n"
+		expect "N1:([0-9,]+) N2:([0-9,]+) N3:([0-9,]+) N4:([0-9,]+) N5:([0-9,]+) N6:([0-9,]+) N7:([0-9,]+) N8:([0-9,]+) N9:([0-9,]+) N10:([0-9,]+) N11:[0-9,]+ N12:[0-9,]+[[:space:]]*\r\n"
+		setplugstate "1" $1 
+		setplugstate "2" $2
+		setplugstate "3" $3
+		setplugstate "4" $4
+		setplugstate "5" $5
+		setplugstate "6" $6
+		setplugstate "7" $7
+		setplugstate "8" $8
+		setplugstate "9" $9
+		setplugstate "10" $10
+	}
+	script on {
+		send "ph %s\r\n"
+		expect "OK\r\n"
+		delay 0.7
+	}
+	script on_all {
+		send "ph *\r\n"
+		expect "OK\r\n"
+		delay 7
+	}
+	script off {
+		send "pl %s\r\n"
+		expect "OK\r\n"
+		delay 0.7
+	}
+	script off_all {
+		send "pl *\r\n"
+		expect "OK\r\n"
+		delay 7
+	}
+	script cycle {
+		send "pl %s\r\n"
+		expect "OK\r\n"
+		delay 4
+		send "ph %s\r\n"
+		expect "OK\r\n"
+		delay 0.7
+	}
+	script cycle_all {
+		send "pl *\r\n"
+		expect "OK\r\n"
+		delay 9
+		send "ph *\r\n"
+		expect "OK\r\n"
+		delay 7
+	}
+	script reset {
+		send "rp %s\r\n"
+		expect "OK\r\n"
+		delay 0.7
+	}
+	script reset_all {
+		send "rp *\r\n"
+		expect "OK\r\n"
+		delay 7
+	}
+}

@@ -1,0 +1,180 @@
+
+Add PCRE support
+
+Index: mf2b-1.1/config.c
+===================================================================
+--- mf2b-1.1.orig/config.c	2014-01-14 13:50:09.000000000 +1000
++++ mf2b-1.1/config.c	2014-08-12 15:32:16.979583207 +1000
+@@ -18,6 +18,9 @@
+ #include <unistd.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
++#if PCRE
++# include <pcre.h>
++#endif
+ 
+ #include "action.h"
+ #include "helper.h"
+@@ -98,6 +101,34 @@
+ 		//printf("%s: handling word '%s'\n", __func__, *w);
+ 		switch (state) {
+ 		case ST_ARG_MATCH:
++#if PCRE
++		{
++			const char *errmsg = NULL;
++                        int erroff = 0;
++
++			if (curact->pcre) {
++				pcre_free(curact->pcre);
++# ifndef PCRE_CONFIG_JIT
++#  define pcre_free_study(x) pcre_free(x)
++# endif
++				pcre_free_study(curact->pcre_sd);
++			}
++			curact->pcre = pcre_compile(*w, 0,
++				&errmsg, &erroff, NULL);
++			if (!curact->pcre) {
++				err("match: %s, position %d in \"%s\"",
++					errmsg, erroff, *w);
++				goto out_syntax_error;
++			}
++			errmsg = NULL;
++			curact->pcre_sd = pcre_study(curact->pcre, 0,
++                                &errmsg);
++			if (!curact->pcre_sd && errmsg) {
++				err("match: %s", errmsg);
++				goto out_syntax_error;
++			}
++		}
++#else
+ 			if (!curact->re) {
+ 				curact->re = malloc(sizeof(*curact->re));
+ 				memset(curact->re, 0, sizeof(*curact->re));
+@@ -105,6 +136,7 @@
+ 				regfree(curact->re);
+ 			}
+ 			regcomp(curact->re, *w, 0); /* XXX: allow passing flags */
++#endif
+ 			state = ST_REG;
+ 			break;
+ 		case ST_ARG_LIMIT:
+Index: mf2b-1.1/Makefile
+===================================================================
+--- mf2b-1.1.orig/Makefile	2014-08-12 15:32:16.935583207 +1000
++++ mf2b-1.1/Makefile	2014-08-12 15:32:16.979583207 +1000
+@@ -12,6 +12,9 @@
+ CFLAGS += -DDEBUG -g
+ endif
+ 
++CFLAGS += -DPCRE
++LDLIBS += -lpcre
++
+ MF2B_SRC := action.c config.c helper.c logging.c matchlist.c substr.c
+ MF2B_OBJ := $(patsubst %.c,%.o,${MF2B_SRC})
+ 
+Index: mf2b-1.1/action.c
+===================================================================
+--- mf2b-1.1.orig/action.c	2014-01-14 13:50:09.000000000 +1000
++++ mf2b-1.1/action.c	2014-08-12 15:32:16.979583207 +1000
+@@ -9,6 +9,10 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#if PCRE
++# include <pcre.h>
++#endif
++
+ #include "action.h"
+ #include "substr.h"
+ 
+@@ -63,7 +67,11 @@
+ int action_copy_empty(struct f2b_action *dst, struct f2b_action *src)
+ {
+ #define ASSIGN_IF_ZERO(f) if (!dst->f) dst->f = src->f
++#if PCRE
++	ASSIGN_IF_ZERO(pcre), dst->pcre_sd = src->pcre_sd;
++#else
+ 	ASSIGN_IF_ZERO(re);
++#endif
+ 	ASSIGN_IF_ZERO(limit);
+ 	ASSIGN_IF_ZERO(timeout);
+ 	if (!dst->ban.nstr)
+Index: mf2b-1.1/action.h
+===================================================================
+--- mf2b-1.1.orig/action.h	2014-01-14 13:50:09.000000000 +1000
++++ mf2b-1.1/action.h	2014-08-12 15:32:16.979583207 +1000
+@@ -18,7 +18,12 @@
+ };
+ 
+ struct f2b_action {
++#if PCRE
++	pcre *pcre;
++	pcre_extra *pcre_sd;
++#else
+ 	regex_t *re;
++#endif
+ 	int limit;
+ 	int timeout; /* seconds */
+ 	struct substr ban, unban;
+Index: mf2b-1.1/mf2b.c
+===================================================================
+--- mf2b-1.1.orig/mf2b.c	2014-08-12 15:32:16.955583207 +1000
++++ mf2b-1.1/mf2b.c	2014-08-12 15:38:55.231586666 +1000
+@@ -24,6 +24,9 @@
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#if PCRE
++# include <pcre.h>
++#endif
+ 
+ #include "action.h"
+ #include "config.h"
+@@ -125,14 +128,38 @@
+ {
+ 	int i, j;
+ 	struct f2b_action *act;
++#if PCRE
++	int ovector[(MAX_SUBS + 1) * 3];
++#endif
+ 	regmatch_t match[MAX_SUBS + 1];	/* allocate for one more, first is always full line */
+ 
+ 	dbg("matching line: %s", str);
+ 	for (i = 0; i < desc->nact; i++) {
+ 		act = desc->act[i];
++#if PCRE
++		int rc = pcre_exec(act->pcre, act->pcre_sd, str, strlen(str),
++			0, 0, ovector,
++			sizeof ovector / sizeof ovector[0]);
++		if (rc < 0)
++			continue;
++
++		/* Convert ovector[] into match[] to save needless rework */
++		memset(match, 0, sizeof match);
++		for (j = 0; j < rc; j++) {
++			match[j].rm_so = ovector[2 * j];
++			match[j].rm_eo = ovector[2 * j + 1];
++		}
++		match[rc].rm_so = -1;
++#else
+ 		if (regexec(act->re, str, MAX_SUBS + 1, match, 0))
+ 			continue;
++#endif
+ 		dbg("%s: got a match for action %d", desc->fname, i);
++		for (j = 0; j < MAX_SUBS + 1 && match[j].rm_so != -1; j++)
++			dbg("  $%d = \"%.*s\"", j,
++				match[j].rm_eo - match[j].rm_so,
++				str + match[j].rm_so);
++
+ 		for (j = 0; j < act->nmatch; j++) {
+ 			if (substr_match(&act->match[j].subs, str, match))
+ 				break;
+Index: mf2b-1.1/mf2b.conf.5
+===================================================================
+--- mf2b-1.1.orig/mf2b.conf.5	2014-01-14 13:50:09.000000000 +1000
++++ mf2b-1.1/mf2b.conf.5	2014-08-12 15:32:16.979583207 +1000
+@@ -78,3 +78,4 @@
+ .SH "SEE ALSO"
+ .BR mf2b (8)
+ .BR regex (7)
++.BR pcresyntax (3)

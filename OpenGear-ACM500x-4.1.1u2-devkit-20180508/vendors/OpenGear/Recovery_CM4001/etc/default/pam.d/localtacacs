@@ -1,0 +1,14 @@
+###############################################################################
+# local or Tacacs
+###############################################################################
+auth sufficient pam_unix.so
+auth requisite pam_tacplus.so encrypt service=raccess use_first_pass
+auth optional pam_adduser.so
+
+account [success=2 default=ignore] pam_succeed_if.so gid ne 3
+account required pam_tacplus.so encrypt service=raccess
+account optional pam_adduser.so
+account required pam_unix.so
+
+session optional pam_tacplus.so encrypt service=raccess
+session required pam_unix.so

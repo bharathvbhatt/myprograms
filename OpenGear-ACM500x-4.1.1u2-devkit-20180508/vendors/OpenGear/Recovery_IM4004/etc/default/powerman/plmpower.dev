@@ -1,0 +1,43 @@
+#
+# Control Insteon/X10 devices via SmartLabs PLM 2412S using the plmpower
+# utility supplied with powerman, e.g.
+#
+#   device "plm" "plmpower" "/usr/sbin/plmpower -d /dev/ttyS1 |&"
+#
+# Plug names are one of:
+#  - Insteon addresses printed on device xx.xx.xx, e.g. "A4.02.B3"
+#  - X10 address [A-P][1-16], e.g. "G13"
+#
+# N.B.: X10 devices will always show power status "unknown".
+#
+specification "plmpower" {
+	timeout 	10
+
+	script login {
+		expect "plmpower> "
+	}
+	script logout {
+		send "quit\n"
+	}
+	script status {
+		send "status %s\n"
+		expect "([^:]+): ([^\n]+)\n"
+		setplugstate $1 $2 off="00" on="[0-9A-F]{2}"
+		expect "plmpower> "
+	}
+	script on {
+		send "on %s\n"
+		expect "plmpower> "
+	}
+	script off {
+		send "off %s\n"
+		expect "plmpower> "
+	}
+	script cycle {
+		send "off %s\n"
+		expect "plmpower> "
+		delay 4
+		send "on %s\n"
+		expect "plmpower> "
+	}
+}

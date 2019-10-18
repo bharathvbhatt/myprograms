@@ -1,0 +1,7 @@
+# This file contains product specific bringup steps
+
+# Bring the TinyModem (if present) out of reset
+# If no modem exists, then this is harmless
+echo "252" > /sys/class/gpio/export
+echo "high" > /sys/class/gpio/gpio252/direction
+

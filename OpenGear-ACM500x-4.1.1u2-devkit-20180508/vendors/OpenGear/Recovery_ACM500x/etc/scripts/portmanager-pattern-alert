@@ -1,0 +1,83 @@
+#!/bin/sh
+
+if [ -z "$ALERT_XMLID" -o -z "$ALERT_PORT" -o -z "$ALERT_PORTNAME" \
+       -o -z "$ALERT_TEXT" ]; then
+    echo "Script does not have mandatory environment"
+    exit 1
+fi
+
+# If there's a user-configured script, run it instead
+scripts[0]="/etc/config/scripts/pattern-alert.${ALERT_PORTNAME}"
+scripts[1]="/etc/config/scripts/portmanager-pattern-alert"
+for (( i=0 ; i < ${#scripts[@]} ; i++ )); do
+	if [ -f "${scripts[$i]}" ]; then
+		exec /bin/sh "${scripts[$i]}"
+	fi
+done
+
+retval=0
+
+nsca=$(config -g $ALERT_XMLID.nsca.enabled | cut -f2- -d' ')
+if [ "$nsca" == "on" ]; then
+
+	export NAME="$(config -g config.ports.port$ALERT_PORT.nagios.name | cut -f2- -d' ')"
+	export CODE="1"
+	export CHECK="alert_pattern_$NAME"
+	export STATUS="Pattern \"$ALERT_PATTERN\" matched on port $ALERT_PORT, data received: $ALERT_TEXT"
+
+	/bin/sh /etc/scripts/alert-nsca
+	retval=$(( $? || $retval ))
+fi
+
+snmp=$(config -g $ALERT_XMLID.snmp.enabled | cut -f2- -d' ')
+if [ "$snmp" == "on" ]; then
+
+	export OID="enterprises.opengear"
+	export AGENT=""
+	export UPTIME=""
+	export SPECIFIC_TYPE=".ogPatternMib.ogPatternMibObjects.ogpatnEvent.ogpatnEventTable"
+	export TRAP_NAME="ogpatnEventOccurred"
+	export NOTIFICATION_TYPE=".ogPatternMib.ogPatternMibNotificationPrefix.ogpatnMibNotifications"
+
+	/bin/sh /etc/scripts/alert-snmp \
+		".ogpatnEventEntry.ogpatnEventDescription" \
+		"s" \
+		"$(config -g $ALERT_XMLID.description | cut -f2- -d' ')" \
+		".ogpatnEventEntry.ogpatnEventText" \
+		"s" \
+		"$ALERT_TEXT" \
+		".ogpatnEventEntry.ogpatnEventPortNumber" \
+		"i" \
+		"$ALERT_PORT" \
+		".ogpatnEventEntry.ogpatnEventPortLabel" \
+		"s" \
+		"$(config -g config.ports.port$ALERT_PORT.label | cut -f2- -d' ')"
+
+	retval=$(( $? || $retval ))
+fi
+
+cms=$(config -g config.cms.enabled | cut -f2- -d' ')
+if [ "$cms" == "on" ]; then
+	alertnum=$(echo $ALERT_XMLID | sed 's/config.alerts.alert//')
+	nodename=$(config -g config.cms.node.name | cut -f2- -d' ')
+	/bin/run_check -c check_xmlalert_${alertnum}_${nodename}
+	retval=$(( $? || $retval ))
+fi
+
+for suffix in "" "2"; do
+
+	email=$(config -g $ALERT_XMLID.email$suffix | cut -f2- -d' ')
+	if [ -z "$email" ]; then
+		continue
+	fi
+
+	export SUBJECT="Alert on port $ALERT_PORT on $(hostname)"
+	export TOADDR="$email"
+	export BODY="Pattern $ALERT_PATTERN matched on $(hostname) port $ALERT_PORT, data received:
+$ALERT_TEXT"
+
+	/bin/sh /etc/scripts/alert-email $suffix
+	retval=$(( $? || $retval ))
+done
+
+exit $retval

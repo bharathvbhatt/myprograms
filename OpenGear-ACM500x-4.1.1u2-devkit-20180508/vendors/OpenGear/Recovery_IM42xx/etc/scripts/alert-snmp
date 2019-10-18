@@ -1,0 +1,106 @@
+#!/bin/sh
+
+set -x
+
+suffix=""
+retval=1
+mibs="ALL"
+#mibs="OG-SMI-MIB OG-CONNECT-MIB OG-FAILOVER-MIB OG-HOST-MIB OG-PATTERN-MIB OG-SENSOR-MIB OG-SIGNAL-MIB OG-UPS-MIB"
+
+for (( i=1 ;; i++ )); do
+
+	if [ $i -gt 1 ]; then
+		suffix=$i
+	fi
+
+	address=$(config -g config.system.snmp.address$suffix | cut -f2- -d' ')
+	version=$(config -g config.system.snmp.version$suffix | cut -f2- -d' ')
+	if [ -z "$version" -o -z "$address" ]; then
+		exit $retval
+	fi
+
+	TRAP_TYPE=ogMgmt
+	if [ "$version" = "1" ]; then
+		TRAP_TYPE=ogLegacyMgmt
+	fi
+
+	protocol=$(config -g config.system.snmp.protocol$suffix | cut -f2- -d' ')
+	if [ -z "$protocol" ]; then
+		protocol=UDP
+	fi	
+
+	trapport=$(config -g config.system.snmp.trapport$suffix | cut -f2- -d' ')
+	if [ -z "$trapport" ]; then
+		protocol=162
+	fi
+
+	manager="$protocol:$address:$trapport"
+	
+	if [ "$version" == "1" ]; then
+
+		mibs="OGTRAP-MIB"
+
+		community=$(config -g config.system.snmp.community$suffix | cut -f2- -d' ')
+		if [ -z "$community" ]; then
+			retval=1
+			continue
+		fi
+
+		trap_params=("$@")
+		for (( j=0 ; j < $# ; j+=3 )); do                               
+			trap_params[$j]="$SPECIFIC_TYPE${trap_params[$j]}"      
+		done 
+
+		MIBS="$mibs" snmptrap -v "$version" -c "$community" "$manager" \
+			"$OID" "$AGENT" "$TRAP_TYPE" \
+			"$SPECIFIC_TYPE.$TRAP_NAME" "$UPTIME" \
+			"${trap_params[@]}"
+    	retval=$(( $? || $retval ))
+
+	elif [ "$version" == "2c" ]; then
+
+		community=$(config -g config.system.snmp.community$suffix | cut -f2- -d' ')
+		if [ -z "$community" ]; then
+			retval=1
+			continue
+		fi
+
+		trap_params=("$@")
+		for (( j=0 ; j < $# ; j+=3 )); do
+			trap_params[$j]="$OID.$TRAP_TYPE$SPECIFIC_TYPE${trap_params[$j]}"
+		done
+
+		MIBS="$mibs" snmptrap -v "$version" -c "$community" "$manager" \
+			"$UPTIME" "$OID.$TRAP_TYPE$NOTIFICATION_TYPE.$TRAP_NAME" \
+			"${trap_params[@]}"
+    	retval=$(( $? || $retval ))
+
+	elif [ "$version" == "3" ]; then
+
+		engine=$(config -g config.system.snmp.engineid$suffix | cut -f2- -d' ')
+		user=$(config -g config.system.snmp.username$suffix | cut -f2- -d' ')
+		if [ -z "$engine" -o -z "$user" ]; then
+			retval=1
+			continue
+		fi
+
+		authpriv="-l noAuthNoPriv"
+		password=$(config -g config.system.snmp.password$suffix | cut -f2- -d' ')
+		if [ ! -z "$password" ]; then
+			authpriv="-a MD5 -A $password -l authNoPriv"
+		fi
+
+		trap_params=("$@")
+		for (( j=0 ; j < $# ; j+=3 )); do
+			trap_params[$j]="$OID.$TRAP_TYPE$SPECIFIC_TYPE${trap_params[$j]}"
+		done
+
+		MIBS="$mibs" snmptrap -e "$engine" -v "$version" -u "$user" $authpriv "$manager" \
+			"$UPTIME" "$OID.$TRAP_TYPE$NOTIFICATION_TYPE.$TRAP_NAME" \
+			"${trap_params[@]}"
+    	retval=$(( $? || $retval ))
+
+	fi
+done
+
+exit $retval

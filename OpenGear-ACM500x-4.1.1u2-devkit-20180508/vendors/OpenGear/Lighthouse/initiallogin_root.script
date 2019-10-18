@@ -1,0 +1,31 @@
+
+# check for first root login, and give the user initial setup info (IP addresses)
+if [ \( "$USER" == "root" -o "$UID" == "0" \) -a ! -f /etc/config/migrate/initiallogin.root.001 ]
+then
+	addresses=`ifconfig | grep "inet addr" | grep -v 127.0.0.1 | cut -d: -f2 | cut -d' ' -f0`
+
+	echo "Welcome to your OpenGear Lighthouse system. This software version is:"
+	cat /etc/version
+	echo
+	echo "The system has been brought up with the following network configuration:"
+	if [ "$addresses" == "" ]
+	then
+		ifconfig
+	else
+		ifconfig | grep -A 1 eth
+	fi
+	echo
+	
+	if [ "$addresses" != "" ]
+	then
+		echo "Please connect to the web interface to configure the device. You can"
+		echo "access the web management console via the following address(es):"
+		for i in $addresses
+		do
+			echo "https://$i/"
+		done
+	fi
+
+	touch /etc/config/migrate/initiallogin.root.001
+fi
+

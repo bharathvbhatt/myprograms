@@ -1,0 +1,8 @@
+menu "FSZ8692 Feature reg control"
+
+config MODULES_KSZFEAT
+  	tristate "kszfeat"
+	---help---
+	  Vendor driver for hacking the ksz8692 feature register.
+
+endmenu

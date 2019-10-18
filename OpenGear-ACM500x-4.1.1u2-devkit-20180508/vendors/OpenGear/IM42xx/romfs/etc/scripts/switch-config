@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Small wrapper script to call the correct switch-config depending on what the
+# detected switch chip is. The /etc/rc script is responsible for setting
+# the config setting appropriately
+
+# Only in the rtl8309 case does it use the switch-config script to do the 
+# detection - so run with this switch in the default case.
+
+SWITCH=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ' )
+if [ -n "$SWITCH" ]; then
+	exec /etc/scripts/switch-config-$SWITCH "$@"
+else
+	exec /etc/scripts/switch-config-rtl8326 "$@"
+fi

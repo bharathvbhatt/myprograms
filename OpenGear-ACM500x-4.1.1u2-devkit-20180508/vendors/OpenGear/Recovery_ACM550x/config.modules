@@ -1,0 +1,10 @@
+#
+# Automatically generated make config: don't edit
+# Dist builder
+#
+CONFIG_MODULES=y
+
+#
+# RaLink Drivers
+#
+# CONFIG_MODULES_RALINK_RT2860 is not set

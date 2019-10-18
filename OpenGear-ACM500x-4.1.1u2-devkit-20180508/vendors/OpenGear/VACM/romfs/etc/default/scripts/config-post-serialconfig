@@ -1,0 +1,21 @@
+#!/bin/bash
+
+numports=$(wc -l /var/run/serial-ports | awk '{print $1}')
+for (( p = 1; p <= $numports; p++ )); do
+	portmode=`config -g config.ports.port${p}.mode | cut -f2 -d' '`
+	if [[ "$portmode" == "portmanager" ]]; then
+		if [[ ! -f /var/run/.dummy-console-${p}.pid ]]; then
+			# Configured but not running, start
+			/etc/config/scripts/dummy-console $p \
+				< /dev/.dummy-console-$p \
+				> /dev/.dummy-console-$p &
+		fi
+	else
+		if [[ -f /var/run/.dummy-console-${p}.pid ]]; then
+			# Not configured and running, stop
+			pid=$(cat /var/run/.dummy-console-${p}.pid)
+			kill $pid
+			rm -f /var/run/.dummy-console-${p}.pid
+		fi
+	fi
+done

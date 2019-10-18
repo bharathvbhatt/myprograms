@@ -1,0 +1,191 @@
+#!/bin/bash
+
+cmdset="reset|oobfo-port-start|oobfo-port-stop|management-lan-start|management-lan-stop|clear"
+retval=0
+
+if [[ -z "${switch_if}" ]]; then
+	switch_if="eth1"
+fi
+if [[ -z "${oobfo_vid}" ]]; then
+	oobfo_vid="3"
+fi
+if [[ -z "${mgmtlan_vid}" ]]; then
+	mgmtlan_vid="2"
+fi
+if [[ -z "${oobfo_port}" ]]; then
+	oobfo_port="0"
+fi
+if [[ -z "${mgmtlan_ports}" ]]; then
+	mgmtlan_ports="1 2 3"
+fi
+if [[ -z "${uplink_port}" ]]; then
+	uplink_port="4"
+fi
+
+function management-lan-stop () {
+	if [[ -n `ifconfig | grep ${switch_if}\.$mgmtlan_vid` ]] ; then
+		ip link set dev ${switch_if}.${mgmtlan_vid} down
+		retval=$(( $? || $retval ))
+	fi
+}
+
+function management-lan-start () {
+	if [[ ! -n `ifconfig | grep ${switch_if}\.$mgmtlan_vid` ]] ; then
+		ip link set dev ${switch_if}.${mgmtlan_vid} up
+		retval=$(( $? || $retval ))
+	fi
+}
+
+function oobfo-port-stop () {
+	ksz8895 $switch_if $oobfo_port vid $mgmtlan_vid
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if $oobfo_port crosstalk $oobfo_port $mgmtlan_ports $uplink_port 
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if $oobfo_port tag filter off
+	retval=$(( $? || $retval ))
+	for port in $mgmtlan_ports; do
+		ksz8895 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+	# Disable 802.1Q, disables tag filtering
+	ksz8895 $switch_if vlan off
+	retval=$(( $? || $retval ))
+	if [[ -n `ifconfig | grep ${switch_if}\.$oobfo_vid` ]] ; then
+		ip link set dev ${switch_if}.${oobfo_vid} down
+		retval=$(( $? || $retval ))
+	fi
+}
+
+function oobfo-port-start () {
+	ksz8895 $switch_if $oobfo_port vid $oobfo_vid
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if $oobfo_port crosstalk $oobfo_port $uplink_port
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if $oobfo_port tag filter on
+	retval=$(( $? || $retval ))
+	for port in $mgmtlan_ports; do
+		ksz8895 $switch_if $port crosstalk $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag filter on
+		retval=$(( $? || $retval ))
+	done
+	# Enable 802.1Q, enables tag filtering
+	ksz8895 $switch_if vlan on
+	retval=$(( $? || $retval ))
+	if [[ ! -n `ifconfig | grep ${switch_if}\.$oobfo_vid` ]] ; then
+		ip link set dev ${switch_if}.${oobfo_vid} up
+		retval=$(( $? || $retval ))
+	fi
+
+	# Create the OOB/FO MAC address
+	switch_mac=`ifconfig ${switch_if}|head -n1|sed 's/.*HWaddr \(.*\)/\1/'`
+	oobfo_mac="${switch_mac:0:10}F${switch_mac:11}"
+	ip link set ${switch_if}.${oobfo_vid} addr ${oobfo_mac}
+	retval=$(( $? || $retval ))
+}
+
+function reset () {
+	# Turn the switch off and on
+	ksz8895 $switch_if reset
+
+	# Uplink port VLAN setup
+	ksz8895 $switch_if $uplink_port crosstalk $oobfo_port $mgmtlan_ports $uplink_port
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if $uplink_port tag insert on
+	retval=$(( $? || $retval ))
+
+	# Default external port VLAN setup
+	for port in $mgmtlan_ports $oobfo_port; do
+		ksz8895 $switch_if $port vid $mgmtlan_vid
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag remove on
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+
+	# Set up VLAN tables for tag filtering
+	ksz8895 $switch_if table $mgmtlan_vid $mgmtlan_vid $mgmtlan_ports $uplink_port
+	retval=$(( $? || $retval ))
+	ksz8895 $switch_if table $oobfo_vid $oobfo_vid $oobfo_port $uplink_port
+	retval=$(( $? || $retval ))
+	# Disable 802.1Q, disables tag filtering
+	ksz8895 $switch_if vlan off
+	retval=$(( $? || $retval ))
+
+	# turn on transmit/receive on all ports
+	for port in $mgmtlan_ports $oobfo_port; do 
+		ksz8895 $switch_if $port receive on
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port transmit on
+		retval=$(( $? || $retval ))
+	done
+
+	# create VLAN interfaces if they do not exist
+	# NOTE, the reset command will be issued by both /etc/rc and conman (conn network-physif-eth1)
+	if [[ ! -n `ifconfig -a | grep ${switch_if}\.$mgmtlan_vid` ]] ; then
+		ip link add link ${switch_if} name ${switch_if}.${mgmtlan_vid} type vlan id ${mgmtlan_vid}
+		retval=$(( $? || $retval ))
+	fi
+
+	if [[ ! -n `ifconfig -a | grep ${switch_if}\.$oobfo_vid` ]] ; then
+		ip link add link ${switch_if} name ${switch_if}.${oobfo_vid} type vlan id ${oobfo_vid}
+		retval=$(( $? || $retval ))
+	fi
+
+	# explicitly set them down so that they can be selectively up-ed by relevant conns
+	# (network-physif-eth1.2/3) when enabled
+	ip link set dev ${switch_if}.${mgmtlan_vid} down
+	retval=$(( $? || $retval ))
+	ip link set dev ${switch_if}.${oobfo_vid} down
+	retval=$(( $? || $retval ))
+}
+
+function clear () {
+	# Turn the switch off and on
+	ksz8895 $switch_if reset
+
+	for port in $mgmtlan_ports $oobfo_port $uplink_port; do
+		ksz8895 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag insert off
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag remove off
+		retval=$(( $? || $retval ))
+		ksz8895 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+
+	ksz8895 $switch_if vlan off
+	retval=$(( $? || $retval ))
+}
+
+function ifup () {
+	if ! ifconfig -s | grep $switch_if &> /dev/null ; then
+		ifconfig $switch_if up
+		bring_down_if="true"
+	fi
+}
+
+function ifdown () {
+	if [[ -n "${bring_down_if}" ]] ; then
+		ifconfig $switch_if down
+	fi
+}
+
+cmd="$1"
+
+if echo "$cmdset" | grep "$cmd" &> /dev/null ; then
+	ifup
+	$cmd
+	ifdown
+else
+	echo "Usage: $0 $cmdset"
+	retval=1
+fi
+
+exit $retval

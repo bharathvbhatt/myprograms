@@ -1,0 +1,80 @@
+#
+# $Id: baytech.dev,v 1.1 2010-11-17 05:46:11 anad Exp $
+#
+# Baytech RPC-3 - old style model (not "NC")
+#
+# Tested the following firmware versions:
+#    Revision F 5.00, (C) 2001
+#    Revision F 5.01, (C) 2001
+# Assumes:
+# 1. command confirmation : disabled (3/configuration, 6/outlets, 2/...)
+# 2. admin account password : "baytech" (2/manage users, 2/admin, 1/...)
+# 3. net: prompt for password : enabled (3/configuration, 5/access, 2/...)
+# Note: prompt is not returned until device is ready to accept another commmand
+#
+specification "baytech" {
+	timeout 	10   # about 5 sec for cycle command
+	pingperiod 	90
+
+	plug name { "1" "2" "3" "4" "5" "6" "7" "8" }
+
+	script ping {
+		send "\r\n"
+		expect ">"
+	}
+	script login {
+		expect "\n"
+		expect "Enter password>"
+		send "baytech\r\n"
+		expect "Enter Selection>"
+		send "1\r\n"
+		expect ">"
+	}
+	script logout {
+		send "menu\r\n"
+		expect "Enter Selection>"
+		send "6\r\n"
+	}
+	script status_all {
+		send "status\r\n"
+		expect "Circuit Breaker:[^\n]*\r\n"	
+		foreachplug {
+			expect "([0-9]+)[ ]+(On|Off)"
+			setplugstate $1 $2 on="On" off="Off"
+		}
+		expect ">"
+	}
+	script on {
+		send "on %s\r\n"
+		expect ">"
+	}
+	script on_all {
+		send "on 0\r\n"
+		expect ">"
+	}
+	script off {
+		send "off %s\r\n"
+		expect ">"
+	}
+	script off_all {
+		send "off 0\r\n"
+		expect ">"
+	}
+# If outlet is initially off, "reboot" will leave it off.
+# This doesn't match PowerMan's semantics for cycle, so explicitly power
+# off then on.
+	script cycle {
+		send "off %s\r\n"
+		expect ">"
+		delay 4
+		send "on %s\r\n"
+		expect ">"
+	}
+	script cycle_all {
+		send "off 0\r\n"
+		expect ">"
+		delay 4
+		send "on 0\r\n"
+		expect ">"
+	}
+}

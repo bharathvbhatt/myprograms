@@ -1,0 +1,31 @@
+#!/bin/sh
+
+unconfigured () {
+	[ -z "$(/bin/config -g config.interfaces.wan.mode -g config.lhvpn)" ]
+}
+
+# log only if $ZTPLOG does not exist
+log1 () {
+	if [ ! -f $ZTPLOG ]; then
+		logger -s -p daemon.info -t "ztp" "$@" 2>$ZTPLOG
+	fi
+}
+
+case $1 in
+bound)
+	export ZTPLOG=/tmp/ztp.log
+	if unconfigured; then
+		# Check for a Vendor Specific Information option (43)
+		# received while we are in MODE_UNCONFIGURED
+		if [ -n "$vendorspec_1$vendorspec_2$vendorspec_3" ]; then
+			/etc/scripts/ztp.script udhcpc.$interface $interface &
+		else
+			log1 "DHCP $1 on $interface, but no vendor-specific option received; unable to configure"
+		fi
+	else # configured
+		if [ -n "$vendorspec_1$vendorspec_2$vendorspec_3" ]; then
+			log1 "DHCP $1 on $interface, received vendor-specific options, and ignored them because system is already configured"
+		fi
+	fi
+	;;
+esac

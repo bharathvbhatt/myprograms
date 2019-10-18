@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+
+<config>
+   <version>0.5</version>
+
+   <system>
+	   <timezone>USA - Eastern</timezone>
+	   <snmp>
+	   	<protocol>UDP</protocol>
+	   	<trapport>162</trapport>
+	   </snmp>
+	   <ipv6>
+	   	<enabled>on</enabled>
+	   </ipv6>
+   </system>
+
+   <console>
+	   <flow>None</flow>
+	   <ppp>
+		   <auth>None</auth>
+	   </ppp>
+	   <speed>115200</speed>
+   </console>
+
+   <eventlog>
+	   <server>
+		   <type>None</type>
+	   </server>
+   </eventlog>
+
+   <auth>
+	   <type>Local</type>
+   </auth>
+
+   <users>
+           <total>1</total>
+           <user1>
+                   <username>root</username>
+                   <description>Root User</description>
+           </user1>
+   </users>
+</config>

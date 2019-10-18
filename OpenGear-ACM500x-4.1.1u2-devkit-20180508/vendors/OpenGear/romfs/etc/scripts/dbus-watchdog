@@ -1,0 +1,38 @@
+#!/bin/sh
+
+if [ "$#" -gt "0" ]; then
+	DBUS_INTERVAL=$1
+else
+	DBUS_INTERVAL=30
+fi
+
+DBUS_INITDELAY="10"
+DBUS_PROBEMAX=12
+DBUS_PIDFILE="/var/run/dbus/pid"
+DBUS_PID=`cat /var/run/dbus/pid`
+
+while [ 1 ]; do
+	DBUS_STATUS=`ls /proc/$DBUS_PID/status`
+
+	if [ "$?" != "0" ]; then
+		logger "dbus-daemon $DBUS_PID is no longer running"
+		rm -f $DBUS_PIDFILE
+		MAGIC=`dbus-daemon --system --fork`
+		if [ ! -z "$MAGIC" ]; then
+			logger "dbus-daemon started: $MAGIC"
+		fi
+		DBUS_PROBECOUNT=0
+		while [ "$DBUS_PROBECOUNT" -lt "$DBUS_PROBEMAX" ]; do
+			DBUS_PROBECOUNT=$[DBUS_PROBECOUNT + 1]
+			if cellctl; then
+				DBUS_PID=`cat $DBUS_PIDFILE`
+				logger "dbus has been restarted with a pid of $DBUS_PID"
+				break
+			else
+				sleep $DBUS_INITDELAY
+			fi
+		done
+	else
+		sleep $DBUS_INTERVAL
+	fi
+done

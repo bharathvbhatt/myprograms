@@ -1,0 +1,30 @@
+#!/bin/bash
+
+if [[ -z "$1" ]]; then
+	echo "Usage: $(basename $0) <public key> [username]"
+	exit 1
+else
+	key="$1"
+fi
+
+if [[ -z "$2" ]]; then
+	user="root"
+else
+	user="$2"
+fi
+if [[ "$user" == "root" ]]; then
+	home=""
+else
+	home="/etc/config/users/$user"
+fi
+
+if [[ -f "$key" ]]; then
+	key=$(cat $key)
+fi
+
+authfile="${home}/.ssh/authorized_keys"
+tmpfile="/tmp/.$(basename $0).$$"
+
+cp "$authfile" "$tmpfile" 
+( cat "$tmpfile" ; echo "$key" ) | uniq > "$authfile"
+rm -f "$tmpfile"

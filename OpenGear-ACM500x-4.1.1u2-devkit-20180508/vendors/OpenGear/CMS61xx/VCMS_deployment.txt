@@ -1,0 +1,210 @@
+Opengear VCMS Deployment Guide
+
+Introduction
+~~~~~~~~~~~~
+
+Opengear CMS runs on both physical (CMS6100) and virtual (VCMS) platforms.
+VCMS can be run as a guest virtual appliance under:
+
+  - Linux Kernel-based Virtual Machine (Linux KVM)
+  - VMware ESX, VMware ESXi
+  - VMware Server, VMware Workstation
+
+The host may be a physical machine that you administer, or a managed server or
+a cloud hosting service from a hosting provider.
+
+
+System Requirements
+~~~~~~~~~~~~~~~~~~~
+
+At a minimum, the VCMS requires the following reserved resources:
+
+  - 500MHz CPU core
+  - 256MB RAM
+  - 4GB disk space
+
+In addition, the following virtual devices are required:
+
+  - Disk device SATA (VMware) or IDE (Linux KVM)
+  - E1000 compatible Ethernet NIC, bridged
+
+
+Distributed Files
+~~~~~~~~~~~~~~~~~
+
+The Opengear VCMS is released as a firmware upgrade file (*.bin) and a full
+image (*.gz).  The full image is used for the initial deployment, firmware
+upgrade files are used thereafter for upgrades.
+
+Upgrades and full images are available from:
+
+  http://www.opengear.com/firmware/
+
+Which full disk image you deploy depends on your virtualization solution:
+
+  - For Linux KVM, use:		vcms-x.y.z-kvm.hdd.gz
+  - For VMware ESX/ESXi, use:	vcms-x.y.z-vmware-ovf.zip
+  - For VMware Server or	
+    Workstation, use:		vcms-x.y.z-vmware.tar.gz
+
+Which upgrade file you use also depends on your virtualization solution:
+
+  - For Linux KVM, use:		vcms-x.y.z-kvm.bin
+  - For VMware, use:		vcms-x.y.z-vmware.bin
+
+Uncompress the full image using gunzip, Winzip or similar before deployment.
+Follow the instructions provided by your virtualization management suite to
+deploy the ovf, vmx or hdd file as appropriate.
+
+Examples are given below for VMware ESXi 4, VMware Workstation 7, and
+ElasticHosts cloud hosting provider.
+
+
+Example deployment: VMware ESXi 4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To complete this deployment you must have VMware ESXi 4 installed and
+running on a bare metal machine, and the VMware vSphere Client installed on a
+PC running Microsoft Windows.
+
+Before proceeding, download and extract the full disk image for VMWare ESXi, as
+described in the "Distributed Files" section.
+
+  1.	Launch the vSphere Client and log into the ESXi with a user who has
+	administrator privileges.
+
+  2.	In the vSphere Client, select File: Deploy OVF Template.  The Deploy
+	OVF Template wizard is displayed.
+
+  3.	Specify the source location and click Next.
+
+  4.	Select Deploy from File and Browse the file system for location where
+	you extracted the contents of: vcms-x.y.z-vmware-ovf.zip
+
+	Select the OVF template file, e.g.: CMS61xx-vcms-vmware.ovf
+
+  5.	Check the OVF Template Details page and click Next.
+
+  6.	If required, edit the OVF Template name.
+
+  7.	Review the Ready to Complete details.  To re-edit Source, OVF Template
+	Details and Name and Location, click on the respective link on the left
+	hand side of the window.  Click Finish when complete.
+
+  8.	The OVF Template is now displayed in the left-hand vSphere Client
+	Status panel under the relevant host.
+
+  9.	To start the virtual machine, select the Virtual Machine tab from the
+	right-hand panel.  Select the Virtual Machine by name, and click the
+	Play button from the top menu.
+
+  10.	Deployment is now complete.  You can monitor the VCMS boot progress
+	using the vSphere Client console, or proceed to "Configuring VCMS" to
+	begin configuration.
+
+
+Example deployment: VMware Workstation 7
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To complete this deployment you must have VMware Workstation 7 installed and
+running on a PC running Microsoft Windows.
+
+Before proceeding, download and extract the full disk image for VMWare
+Workstation, as described in the "Distributed Files" section.
+
+  1.	Launch VMware Workstation.
+
+  2.	Click the Launch Existing VM or Team icon in the right-hand side of the
+	window.  Browse the file system for the location where you extracted
+	the contents of: 
+
+  3.	Select Deploy from File and Browse the file system for location where
+	you extracted the contents of: vcms-x.y.z-vmware.tar.gz
+
+	Select and Open the VMX file, e.g.: CMS61xx-vcms-vmware.vmx
+
+	The Opengear VCMS tab is displayed.
+
+  4.	Click the "Power on this virtual machine" link located in the Commands
+	box.
+
+  5.	Deployment is now complete.  You can monitor the VCMS boot progress
+	using the VMware Workstation console, or proceed to "Configuring VCMS"
+	to begin configuration.
+
+
+Example Cloud Deployment: ElasticHosts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+These instructions are current as of 19 August 2010.
+
+  1.	Browse to http://www.elastichosts.com and create an account at your
+	preferred peer location.
+
+  2.	You may wish to use the 5 day free hosting trial, otherwise add a
+	subscription that meets the reserved resource requirements outlined
+	under System Requirements in this document.
+
+	Ensure you set 'Commited data transfer' to 10 GB or higher and/or have
+	pre-pay balance to cover monthly data transfer.  Data usage by VCMS
+	will vary with usage patterns, but will generally not be heavy.
+
+	We recommend you purchase a static IP address, otherwise you must also
+	configure VCMS to use a dynamic DNS service.
+
+  3.	Upload vcms-x.y.z-kvm.hdd as a drive using any of the methods
+	described in:
+
+	  http://www.elastichosts.com/cloud-hosting/faq#uploadQ
+
+	If you are deploying from a Linux or POSIX compliant system, we
+	recommend using the drive upload tool script:
+
+	  http://www.elastichosts.com/downloads/elastichosts-upload.sh
+
+	Your secret API key is available on your Profile page:
+
+	  export EHAUTH="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+	Your API endpoint URI is the hostname of account's peer location,
+	preceded by "api.", e.g. for San Antonio Peer 1:
+
+	  export EHURI=https://api.sat-p.elastichosts.com/
+
+	After setting these in your environment, run:
+
+	  ./elastichosts-upload.sh vcms-x.y.z-kvm.hdd
+
+  4.	From the Elastic Hosts Control Panel, select Server in 'Add server or
+	drive'.  Enter a Name, e.g. "VCMS".  Select the Type of
+	'Boot from existing drive'.  Select the Drive you uploaded in the
+	previous step, e.g. "vcms-x.y.z-kvm.hdd".  Click Add.
+
+  5.	Click Edit on the Server you have just added.  Select the static IP
+	address to use if available, and set the VNC password.  Click Start.
+
+  6.	Deployment is now complete.  You can now monitor the VCMS boot progress
+	using VNC, or proceed to "Configuring VCMS" to begin configuration.
+
+
+Configuring VCMS 
+~~~~~~~~~~~~~~~~
+
+After initial install, you cannot log in to the VCMS until a root password
+is set.
+
+*** Connect to the virtual VGA console to set the root password. ***
+
+After the root password is set, on first login, configuration information is
+displayed. Further VCMS configuration can be performed by browsing to the IP
+address listed. (By default, the VCMS will have an address obtained via DHCP,
+and a static address of 192.168.0.1.)
+
+The default credentials:
+
+  root / <set via console on first start up>
+
+Configuration instructions are available in the VCMS User Manual, from:
+
+  http://www.opengear.com/download/manual/
+  

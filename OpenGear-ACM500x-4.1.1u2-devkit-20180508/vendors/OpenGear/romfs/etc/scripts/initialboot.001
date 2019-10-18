@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# detect the first boot of a device (either factory fresh, or config erase).
+
+/etc/scripts/storage-initboot
+
+# For CMS, prompt the user for a new root password.
+if [ "$modelname" == "vcms" -o "$modelname" == "VCMS" -o "$modelname" == "Lighthouse VM" ] && [ -e /var/run/boot_has_clean_config ]
+then
+	echo
+	echo "Welcome to your $VENDOR $modelname device. This is software version:"
+	cat /etc/version
+	echo 
+	echo "To complete initial setup, please set a new root password."
+	echo "Press ENTER to continue."
+
+	read dummy
+	echo
+
+	i=0
+	while true
+	do
+		i=$((i+1))
+		read -s -p "Enter new root password: " pass1
+		echo
+		read -s -p "Confirm given password: " pass2
+		echo
+
+		if [ "$pass1" == "$pass2" -a "$pass1" != "" ]
+		then
+			# use the config system to set the password; it will do all
+			# the appropriate hashing, etc.
+			config -s config.users.user1.plaintext_password=$pass1
+			config -r users > /dev/null
+			echo
+			echo "root password successfully set."
+			break
+		else
+			echo
+			if [ "$pass1" == "" ]
+			then
+				echo "Empty password given. Please enter a new password."
+			else
+				echo "Given passwords do not match. Please retry."
+			fi
+			sleep 1
+			echo
+		fi
+
+		# in case something goes horribly wrong, bail after 50 attempts.
+		# this can help prevent rendering machines unbootable in case devices
+		# change, or it can't do the 'read' from stdin properly, etc.
+		if [ "$i" -ge 50 ]
+		then
+			break
+		fi
+	done
+fi
+

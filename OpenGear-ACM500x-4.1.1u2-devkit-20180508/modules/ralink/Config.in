@@ -1,0 +1,5 @@
+mainmenu_option next_comment
+  comment 'RaLink Drivers'
+  tristate 'rt2860' CONFIG_MODULES_RALINK_RT2860
+endmenu
+

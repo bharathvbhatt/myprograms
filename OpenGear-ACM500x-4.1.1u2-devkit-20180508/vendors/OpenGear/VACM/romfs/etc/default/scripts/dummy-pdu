@@ -1,0 +1,74 @@
+#!/bin/bash
+
+port=$1
+outlets=$2
+cmd=$3
+
+if [[ -z "$port" ]] || [[ -z "$outlets" ]] || [[ -z "$cmd" ]]; then
+	appname=`basename $0`
+	echo "Usage: $appname <port> \"<outlet> [outlet..]\" on|off|cycle|status"
+	exit 1
+fi
+
+numdevices=$(config -g config.devices.total | cut -f2 -d' ')
+portnum=$(echo $port | sed 's/.*port\(.*\)/\1/')
+portnum=$(printf '%d' $portnum)
+pduname=$(config -g config.ports.port${portnum}.power.name | cut -f2 -d' ')
+
+for outlet in $outlets; do
+
+	device=""
+	for (( i = 1; i <= $numdevices; i++ )); do
+		for (( j = 1 ;; j++ )); do
+			val=$(config -g config.devices.device${i}.connections.connection${j}.type | cut -f2 -d' ')
+			[[ -z "$val" ]] && break
+			[[ "$val" != "RPC" ]] && continue
+			val=$(config -g config.devices.device${i}.connections.connection${j}.name | cut -f2 -d' ')
+			[[ "$val" != "$pduname" ]] && continue
+			val=$(config -g config.devices.device${i}.connections.connection${j}.outlet | cut -f2 -d' ')
+			[[ "$val" != "$outlet" ]] && continue
+			device="config.devices.device${i}"
+			break 2
+		done
+	done
+	consolenum=""
+	if [[ -n "$device" ]]; then
+		for (( j = 1 ;; j++ )); do
+			val=$(config -g config.devices.device${i}.connections.connection${j}.type | cut -f2 -d' ')
+			[[ -z "$val" ]] && break
+			[[ "$val" != "Serial" ]] && continue
+			consolenum=$(config -g config.devices.device${i}.connections.connection${j}.name | cut -f2 -d' ')
+			pid=$(ps w | grep "dummy-console $consolenum" | grep -v grep | awk '{print $1}')
+			break
+		done
+	fi
+	
+	if [[ -n "$consolenum" ]]; then
+		ln -sf /var/run/.${pduname}-outlet${outlet}-off /var/run/.dummy-console-${consolenum}-off
+	fi
+
+	case $cmd in
+	"on" )
+		rm -f /var/run/.${pduname}-outlet${outlet}-off
+	;;
+	"off" )
+		touch /var/run/.${pduname}-outlet${outlet}-off
+		[[ -n "$pid" ]] && kill -1 $pid
+	;;
+	"cycle" )
+		rm -f /var/run/.${pduname}-outlet${outlet}-off
+		[[ -n "$pid" ]] && kill -1 $pid
+	;;
+	esac
+
+	if [[ -f /var/run/.${pduname}-outlet${outlet}-off ]]; then
+		status=off
+	else
+		status=on
+	fi
+	
+	sleep 1
+	echo "Outlet $outlet is $status"
+done
+
+exit 0

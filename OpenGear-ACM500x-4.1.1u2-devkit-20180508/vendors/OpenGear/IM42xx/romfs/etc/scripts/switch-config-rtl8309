@@ -1,0 +1,119 @@
+#!/bin/bash
+cmdset="reset|ping|oobfo-port-start|oobfo-port-stop|management-lan-start|management-lan-stop|clear"
+
+retval=0
+
+if [[ -z "${switch_if}" ]]; then
+	switch_if="switch0"
+fi
+if [[ -z "${other_devices}" ]]; then
+	other_devices="eth2 eth3 eth4 eth5"
+fi
+if [[ -z "${oobfo_device}" ]]; then
+	oobfo_device="eth1"
+fi
+
+#Detection routine, returns 0 if detected
+function ping () {
+	retval=0
+}
+
+#Disables all ports? -- not used?...
+function management-lan-stop () {
+	retval=0
+	if ifconfig ${switch_if}; then
+		ifconfig ${switch_if} down
+		retval=$(( $? || $retval ))
+		for interface in ${other_devices}; do
+			brctl delif ${switch_if} ${interface}
+			retval=$(( $? || $retval ))
+		done
+		brctl delbr ${switch_if}
+		retval=$(( $? || $retval ))
+	fi
+}
+
+#Starts up all the ports, tied together
+# lets assume that the 'reset' routine does enough to start 
+# it appropriately
+function management-lan-start () {
+	retval=0
+	if ! ifconfig ${switch_if}; then
+		# still need to set mac addresses
+		brctl addbr ${switch_if}
+		retval=$(( $? || $retval ))
+		for interface in ${other_devices}; do
+			brctl addif ${switch_if} ${interface}
+			retval=$(( $? || $retval ))
+		done
+		retval=$(( $? || $retval ))
+	fi
+}
+
+#Turns off the oobfo port
+function oobfo-port-stop () {
+	retval=$(( $? || $retval ))
+}
+
+#Turns on the oobfo port
+function oobfo-port-start () {
+	retval=$(( $? || $retval ))
+}
+
+#Stops, then starts all the ports
+function reset () {
+	for interface in ${other_devices}; do
+		#Ensure that port 0 on all the ports is powered up
+		rtl8309 ${interface} 0 register 0 0x1000
+		retval=$(( $? || $retval ))
+		#Ensure that the uplink port is 100MB-FD
+		rtl8309 ${interface} 8 register 4 0x501
+		retval=$(( $? || $retval ))
+	done
+
+	management-lan-stop
+	retval=$(( $? || $retval ))
+
+	management-lan-start
+	retval=$(( $? || $retval ))
+}
+
+#This doesn't do a reset, it wipes all the vlans in prep for 
+# e.g. bridging the interface with the other ports. 
+function clear () {
+	management-lan-stop
+	retval=$(( $? || $retval ))
+}
+
+#Brings up the switch interface, - this will be the bridged interface
+function ifup () {
+	if ! ifconfig -s | grep $switch_if &> /dev/null ; then
+		ifconfig $switch_if up	
+		bring_down_if="true"
+	fi
+}
+
+#Bring down the switch interface, this will be the bridged interface
+function ifdown () {
+	if [[ -n "${bring_down_if}" ]] ; then
+		ifconfig $switch_if down
+	fi
+}
+
+#Default command
+if [[ $# -eq 0 ]] ; then
+	echo "Usage: $0 $cmdset"
+	retval=1
+fi
+
+cmd="$1"
+
+#Seeing if the specified command is one we know about
+if echo "$cmdset" | grep "$cmd" &> /dev/null ; then
+	$cmd
+else
+	echo "Usage: $0 $cmdset"
+	retval=1
+fi
+
+exit $retval

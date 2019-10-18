@@ -1,0 +1,157 @@
+#!/bin/sh
+
+cmdset="reset|oobfo-port-start|oobfo-port-stop|management-lan-start|management-lan-stop|clear"
+retval=0
+
+if [[ -z "${switch_if}" ]]; then
+	switch_if="eth1"
+fi
+if [[ -z "${oobfo_vid}" ]]; then
+	oobfo_vid="3"
+fi
+if [[ -z "${mgmtlan_vid}" ]]; then
+	mgmtlan_vid="2"
+fi
+if [[ -z "${oobfo_port}" ]]; then
+	oobfo_port="0"
+fi
+if [[ -z "${mgmtlan_ports}" ]]; then
+	mgmtlan_ports="1 2 3"
+fi
+if [[ -z "${uplink_port}" ]]; then
+	uplink_port="4"
+fi
+
+function management-lan-stop () {
+	retval=0
+}
+
+function management-lan-start () {
+	retval=0
+}
+
+function oobfo-port-stop () {
+	ks8695 $switch_if $oobfo_port vid $mgmtlan_vid
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if $oobfo_port crosstalk $oobfo_port $mgmtlan_ports $uplink_port 
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if $oobfo_port tag filter off
+	retval=$(( $? || $retval ))
+	for port in $mgmtlan_ports; do
+		ks8695 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+	# Disable 802.1Q, disables tag filtering
+	ks8695 $switch_if vlan off
+	retval=$(( $? || $retval ))
+}
+
+function oobfo-port-start () {
+	ks8695 $switch_if $oobfo_port vid $oobfo_vid
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if $oobfo_port crosstalk $oobfo_port $uplink_port
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if $oobfo_port tag filter on
+	retval=$(( $? || $retval ))
+	for port in $mgmtlan_ports; do
+		ks8695 $switch_if $port crosstalk $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag filter on
+		retval=$(( $? || $retval ))
+	done
+	# Enable 802.1Q, enables tag filtering
+	ks8695 $switch_if vlan on
+	retval=$(( $? || $retval ))
+}
+
+function reset () {
+	# Uplink port VLAN setup
+	ks8695 $switch_if $uplink_port crosstalk $oobfo_port $mgmtlan_ports $uplink_port
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if $uplink_port tag insert on
+	retval=$(( $? || $retval ))
+
+	# Default external port VLAN setup
+	for port in $mgmtlan_ports $oobfo_port; do
+		ks8695 $switch_if $port vid $mgmtlan_vid
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port	
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag remove on
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+
+	if [[ -n `ifconfig | grep ${switch_if}\.$mgmtlan_vid` ]] ; then
+		vconfig rem ${switch_if}.$mgmtlan_vid
+		retval=$(( $? || $retval ))
+	fi
+	vconfig add $switch_if $mgmtlan_vid
+	retval=$(( $? || $retval ))
+
+	if [[ -n `ifconfig | grep ${switch_if}\.$oobfo_vid` ]] ; then
+		vconfig rem ${switch_if}.$oobfo_vid
+		retval=$(( $? || $retval ))
+	fi
+	vconfig add $switch_if $oobfo_vid
+	retval=$(( $? || $retval ))
+	# Create the OOB/FO MAC address
+	switch_mac=`ifconfig ${switch_if}|head -n1|sed 's/.*HWaddr \(.*\)/\1/'`
+	oobfo_mac="${switch_mac:0:10}F${switch_mac:11}"
+	ip link set ${switch_if}.${oobfo_vid} addr ${oobfo_mac}
+	retval=$(( $? || $retval ))
+
+	# Set up VLAN tables for tag filtering
+	ks8695 $switch_if table 0 $mgmtlan_vid $mgmtlan_vid $mgmtlan_ports $uplink_port
+	retval=$(( $? || $retval ))
+	ks8695 $switch_if table 1 $oobfo_vid $oobfo_vid $oobfo_port $uplink_port
+	retval=$(( $? || $retval ))
+	# Disable 802.1Q, disables tag filtering
+	ks8695 $switch_if vlan off
+	retval=$(( $? || $retval ))
+}
+
+function clear () {
+	for port in $mgmtlan_ports $oobfo_port $uplink_port; do
+		ks8695 $switch_if $port crosstalk $oobfo_port $mgmtlan_ports $uplink_port
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag insert off
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag remove off
+		retval=$(( $? || $retval ))
+		ks8695 $switch_if $port tag filter off
+		retval=$(( $? || $retval ))
+	done
+
+	ks8695 $switch_if vlan off
+	retval=$(( $? || $retval ))
+}
+
+function ifup () {
+	if ! ifconfig -s | grep $switch_if &> /dev/null ; then
+		ifconfig $switch_if up
+		bring_down_if="true"
+	fi
+}
+
+function ifdown () {
+	if [[ -n "${bring_down_if}" ]] ; then
+		ifconfig $switch_if down
+	fi
+}
+
+cmd="$1"
+
+if echo "$cmdset" | grep "$cmd" &> /dev/null ; then
+	ifup
+	$cmd
+	ifdown
+else
+	echo "Usage: $0 $cmdset"
+	retval=1
+fi
+
+exit $retval

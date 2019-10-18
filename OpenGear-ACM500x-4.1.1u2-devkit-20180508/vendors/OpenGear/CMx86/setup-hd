@@ -1,0 +1,160 @@
+#!/bin/sh
+#
+# install CD image to HD
+#
+# usage: setup-hd /dev/hda
+#
+# David McCullough <davidm@opengear.com>
+#
+
+DEVICE="$1"
+
+yesno()
+{
+	while :
+	do
+		echo -n "$1 (y/n) [$2]: "
+		read t
+		[ -z "$t" ] && t="$2"
+		case "$t" in
+		y*|Y*) return 0 ;;
+		n*|N*) return 1 ;;
+		esac
+		echo "Please enter 'y' or 'n'"
+	done
+}
+
+#
+# the main routine
+#
+
+if [ ! -b "$DEVICE" ]; then
+	echo
+	echo "usage: $0 <device>"
+	echo
+	echo "Installs bootable system onto the selected hard disk"
+	echo
+	echo "Possible devices to use are:"
+	grep -l disk /proc/ide/*/*/media | while read t
+		do
+			DIR=`dirname $t`
+			DEV=`basename $DIR`
+			echo "/dev/$DEV: `cat $DIR/capacity` sectors"
+		done
+	exit 1
+fi
+
+echo "**************************************"
+echo
+echo "Warning.  This will erase your hard drive."
+echo
+echo "**************************************"
+echo
+if ! yesno "Are you sure you want to continue ?" n
+then
+	exit 1
+fi
+
+sfdisk -uM $DEVICE <<!EOF
+0,128,L,*
+,128,61,-
+,0,,-
+,0,,-
+!EOF
+
+if [ "$?" != 0 ]
+then
+	echo "fdisk failed."
+	exit 1
+fi
+
+echo "Making filesystems ..."
+sleep 5
+if ! mke2fs -j ${DEVICE}1
+then
+	echo "Failed to format root filesystem."
+	exit 1
+fi
+
+echo "**************************************"
+echo
+if yesno "Create a new config filesystem ?" y
+then
+	if ! mke2fs -j ${DEVICE}2
+	then
+		echo "Failed to format config filesystem."
+		exit 1
+	fi
+fi
+
+#
+# setup the root filesystem
+#
+
+if ! mount ${DEVICE}1 /mnt
+then
+	echo "Failed to mount new root filesystem"
+	exit 1
+fi
+
+#
+# copy root filesystem
+#
+
+FILES=".ssh"
+for i in /*
+do
+	case "$i" in
+	/var|/proc|/mnt)
+		mkdir -p /mnt/$i
+		;;
+	/tmp)
+		ln -s /var/tmp /mnt/tmp
+		;;
+	*)
+		FILES="$FILES $i"
+		;;
+	esac
+done
+
+#
+# transfer the files
+#
+(cd /; tar cf - $FILES) | (cd /mnt; tar xf -)
+
+#
+# we don't want a copy of the config files in root
+#
+rm -rf /mnt/etc/config/*
+
+rm -f /mnt/dev/flash/config
+ln -s ${DEVICE}2 /mnt/dev/flash/config
+
+#
+# setup lilo
+#
+CONSOLE=`dmesg | grep console= | sed 's/.*\(console=[^ 	][^ 	]*\).*/\1/'`
+if [ "$CONSOLE" ]
+then
+	CONSOLE="append=\"$CONSOLE\""
+fi
+cat <<!EOF >/mnt/etc/lilo.conf
+lba32
+boot=${DEVICE}
+root=${DEVICE}1
+install=/boot/boot.b
+default=Linux
+
+image=/boot/vmlinuz
+	label=Linux
+	read-only
+	$CONSOLE
+!EOF
+lilo -r /mnt
+
+umount /mnt
+
+echo
+echo "Remove CD and Reboot to start new system"
+
+exit 0

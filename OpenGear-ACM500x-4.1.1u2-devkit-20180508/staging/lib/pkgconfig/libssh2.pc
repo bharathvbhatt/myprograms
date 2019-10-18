@@ -1,0 +1,16 @@
+###########################################################################
+# libssh2 installation details
+###########################################################################
+
+prefix=
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libssh2
+URL: http://www.libssh2.org/
+Description: Library for SSH based connunication
+Version: 1.2.5
+Libs: -L${libdir} -lssh2 -Wl,-S -fno-common -fno-builtin -Wl,-L/home/build/opengear/staging/lib -Wl,-rpath-link -Wl,/home/build/opengear/staging/lib -Wl,-L/home/build/opengear/staging/lib64 -Wl,-rpath-link -Wl,/home/build/opengear/staging/lib64 
+Libs.private: 
+Cflags: -I${includedir}

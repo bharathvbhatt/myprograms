@@ -1,0 +1,21 @@
+############################################################################
+.EXPORT_ALL_VARIABLES:
+############################################################################
+#
+# Lighthouse setup - toby.smith@opengear.com
+
+LINUXTARGET = bzImage
+
+CROSS_COMPILE := i386-linux-20070808-
+KERNEL_CROSS_COMPILE := i386-linux-20070808-
+
+HW_PRODUCT=CMS61xx
+
+VENDOR_CFLAGS := -DCONFIG_PRODUCT_LIGHTHOUSE
+CONFIG_PRODUCT_LIGHTHOUSE=1
+
+############################################################################
+
+include $(ROOTDIR)/vendors/config/i386/config.arch
+
+############################################################################

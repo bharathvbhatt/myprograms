@@ -1,0 +1,5 @@
+inet:unknown:/bin/inetd
+cron:unknown:/usr/sbin/crond -l 9 -S -f
+fltd:unknown:/bin/flatfsd
+klog:unknown:/sbin/klogd -n
+slog:unknown:/sbin/syslogd -n

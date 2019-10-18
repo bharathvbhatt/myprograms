@@ -1,0 +1,9 @@
+#!/bin/bash
+
+device=console
+peerfile=/etc/config/peers/dialout.$device
+chatfile=/etc/config/network/dialout.$device.chat
+
+sed -i 's/"ATDT.*"/"ATDT\\T"/g' $chatfile
+sed -i 's/^connect/#connect/g' $peerfile
+echo connect \'/bin/bash /etc/config/scripts/redial $device\' >> $peerfile

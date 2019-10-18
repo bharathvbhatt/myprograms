@@ -1,0 +1,71 @@
+#
+# Rackable Phantom v3 and v4.
+#
+specification  "phantom" {
+	timeout 	15.0
+
+	plug name { "1" }
+
+	script login {
+		send "\036\035"	# enter "shell mode"
+		expect "ok\r"
+	}
+	script status {
+		send "P?"
+		expect "(0|1)\r"
+		setplugstate "1" $1 on="1" off="0"
+	}
+	script on {
+		send "P?"
+		expect "(0|1)\r"
+		setplugstate "1" $1 on="1" off="0"
+		ifoff {
+			send "PT"
+			expect "ok\r"
+		}
+	}		
+	script off {
+		send "P?"
+		expect "(0|1)\r"
+		setplugstate "1" $1 on="1" off="0"
+		ifon {
+			send "PT"
+			expect "ok\r"
+		}
+	}		
+	script cycle {
+		send "P?"
+		expect "(0|1)\r"
+		setplugstate "1" $1 on="1" off="0"
+		ifon {
+			send "PT"
+			expect "ok\r"
+			delay 4
+		}
+		send "PT"
+		expect "ok\r"
+	}
+	script beacon_on {
+		send "L1"	# LED on
+		expect "ok\r"
+		send "B1"	# blink LED
+		expect "ok\r"
+	}
+	script beacon_off {
+		send "L0"	# LED off
+		expect "ok\r"
+		send "B0"	# unblink LED
+		expect "ok\r"
+	}
+	script status_beacon {
+		send "L?"	# get LED status 1=on, 0=off, B=blink
+		expect "(0|1|B)\r" 
+		setplugstate "1" $1 on="(B|1)" off="0"
+	}
+# N.B. phantom 3 requires probe #, phantom 4 ignores it
+	script status_temp {
+		send "T0"	# get temp probe 0
+		expect "([0-9]+)\r" # value is 8-bit Celcius  
+		setplugstate "1" $1
+	}
+}

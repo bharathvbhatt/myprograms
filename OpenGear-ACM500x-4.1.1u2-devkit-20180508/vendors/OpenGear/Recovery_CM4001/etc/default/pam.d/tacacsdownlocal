@@ -1,0 +1,16 @@
+###############################################################################
+# Tacacs, local iff down
+###############################################################################
+auth [success=1 default=ignore] pam_succeed_if.so login != root quiet
+auth sufficient pam_unix.so
+auth [authinfo_unavail=ignore success=1 default=die] pam_tacplus.so encrypt service=raccess
+auth requisite pam_unix.so use_first_pass
+auth optional pam_adduser.so
+
+account [authinfo_unavail=ignore auth_err=ignore success=1] pam_tacplus.so encrypt service=raccess
+account sufficient pam_unix.so
+account optional pam_adduser.so
+account required pam_localuser.so
+
+session optional pam_tacplus.so encrypt service=raccess
+session required pam_unix.so

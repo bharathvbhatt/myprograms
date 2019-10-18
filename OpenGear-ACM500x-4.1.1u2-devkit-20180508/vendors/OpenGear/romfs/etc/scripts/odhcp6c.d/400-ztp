@@ -1,0 +1,39 @@
+#!/bin/sh
+
+# Return true when both configs are undefined, which is the case
+# when the "Network Interface" is unconfigured
+unconfigured () {
+	[ -z "$(/bin/config -g config.interfaces.wan.mode -g config.lhvpn)" ]
+}
+
+# log only if $ZTPLOG does not exist
+log1 () {
+	if [ ! -f $ZTPLOG ]; then
+		logger -s -p daemon.info -t "ztp6" "$@" 2>$ZTPLOG
+	fi
+}
+
+case $2 in
+bound|updated|rebound|informed)
+	export ZTPLOG=/tmp/ztp.log
+	if unconfigured; then
+		# DHCPv6 Vendor Specific Information option ($OPTION_17)
+		# received in MODE_UNCONFIGURED triggers the ZTP process.
+		if [ -n "$OPTION_17" ]; then
+			# ztp.script will pull its arguments from infod.
+			# We run the ZTP process in the background
+			# so that we don't slow down the DHCP lease process.
+			/etc/scripts/ztp.script odhcp6c.$1 $1 &
+		else
+			# For ztp.log feature, record the fact that we got
+			# a DHCP lease, and that it has no vendor specific option.
+			# Only record this once so that /tmp doesn't fill up
+			log1 "DHCPv6 $2 on $1, but no vendor-specific option received; unable to configure"
+		fi
+	else # configured
+		if [ -n "$OPTION_17" ]; then
+			log1 "DHCPv6 $2 on $1, received vendor-specific options, and ignored them because system is already configured"
+		fi
+	fi
+	;;
+esac

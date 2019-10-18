@@ -1,0 +1,16 @@
+#!/bin/sh
+
+echo "Configuring network"
+
+route del default 2> /dev/null
+
+#
+# Set ephemeral port range to be above anything that is listening
+#
+echo "49152 65535" > /proc/sys/net/ipv4/ip_local_port_range 
+
+if [ -f /etc/config/netstart ]; then
+	/bin/sh -x /etc/config/netstart
+else
+	/bin/sh /etc/default/netstart
+fi

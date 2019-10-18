@@ -1,0 +1,18 @@
+#
+# This file was automatically generated
+#
+sercon
+115200
+noauth
+noipdefault
+usepeerdns
+defaultroute
+proxyarp
+modem
+lock
+user default-PSTN
+ifprefix dialout
+ip-up /etc/scripts/dialout-up
+ip-down /etc/scripts/dialout-down
+ipparam console
+connect '/bin/chat -v -f /etc/config/network/dialout.console.chat'

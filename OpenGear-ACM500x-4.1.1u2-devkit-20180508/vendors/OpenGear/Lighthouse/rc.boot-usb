@@ -1,0 +1,566 @@
+#!/bin/sh
+######################################################################
+
+hostname OpenGear
+MODEL=`cut -f1 -d' ' /etc/version  | cut -f2 -d'/' | tr '[A-Z]' '[a-z]'`
+
+######################################################################
+
+progressbar()
+{
+	if [ $# != 1 ]; then
+		echo "Usage: progressbar {progress}"
+		exit 1
+	fi
+	if [ -f /proc/splash ]; then
+		echo "show $(( 65534 * $1 / 100 ))" > /proc/splash
+	fi
+}
+
+######################################################################
+# fix all the infrastructure things first
+
+mount -t proc proc /proc
+if [ -d /sys ]; then
+	mount -t sysfs sysfs /sys
+fi
+
+progressbar 1
+
+# use memory size in Kib to determine /var size
+
+MEMSIZE=`free | sed -ne 's/^ *Mem:  *\([^ ]*\) .*/\1/p'`
+if [ "${MEMSIZE}" -le 16384 ]; then
+    VARSIZE="256k"
+    CNFSIZE="512k"
+elif [ "${MEMSIZE}" -le 65536 ]; then
+    VARSIZE="512k"
+    CNFSIZE="512k"
+else
+    VARSIZE="50%"
+    CNFSIZE="20%"
+fi
+
+mount -t tmpfs -o size=${VARSIZE} tmpfs /var
+mkdir /var/tmp
+chmod 1777 /var/tmp
+mkdir /var/log
+mkdir /var/log/enviro
+mkdir /var/log/enviro/emd
+mkdir /var/log/enviro/rpc
+mkdir /var/log/enviro/ups
+mkdir /var/log/enviro/powersupply
+mkdir /var/run
+mkdir /var/run/power
+mkdir /var/run/portmanager
+mkdir /var/run/cascade
+mkdir /var/run/sshforwards
+mkdir /var/run/.switch
+mkdir -p /var/run/config/mnt
+mkdir /var/state
+mkdir /var/lock
+mkdir /var/empty
+mkdir /var/dev
+mkdir -p /var/spool/cron/crontabs
+touch /var/log/wtmp
+touch /var/run/utmp
+chmod a-w /var/run/utmp
+
+# Start up watchdogd
+if [ -e /dev/watchdog ]; then
+	watchdog /dev/watchdog
+fi
+
+progressbar 10
+
+KVERSION=$(uname -r)
+
+if [ -f /lib/modules/${KVERSION}/kernel/net/ipv4/netfilter/ip_tables.ko ]; then
+    modprobe ip_tables
+    modprobe nf_conntrack_tftp
+fi
+
+# Mount /dev/pts for Unix98 pty support
+if grep devpts /proc/filesystems > /dev/null; then
+    mount -t devpts /dev/devpts /dev/pts
+fi
+
+if [ -f /lib/modules/${KVERSION}/kernel/drivers/usb/host/usb-ohci.ko ]; then
+    modprobe usb-ohci
+fi
+if grep usbfs /proc/filesystems > /dev/null; then
+    mount -t usbfs usbfs /proc/bus/usb && sleep 2
+fi
+
+if [ -f /lib/modules/${KVERSION}/kernel/drivers/net/tun.ko ]; then
+    modprobe tun
+fi
+
+progressbar 20
+echo "Mounting /etc/config"
+
+# mount /etc/config as the last SpeedStor partition (USB get priority
+# over IDE) we need to delay a little for USB devices :-(
+
+if [ -f /proc/bus/usb/devices ]; then
+    sleep 2
+    if grep usb-storage /proc/bus/usb/devices > /dev/null 2>&1; then
+	sleep 5
+    fi
+fi
+
+mount -t tmpfs -o size=${CNFSIZE} tmpfs /etc/config
+
+progressbar 30
+# Remove config if erase has been pressed or erase-config selected
+RESET_CONFIG=0
+
+if grep erase-config /proc/cmdline > /dev/null 2>&1; then
+    echo "Manual clean of /etc/config forced"
+    touch /etc/config/.init
+fi
+
+if [ -f /etc/config/.init ]; then
+    RESET_CONFIG=1
+    echo "Cleaning /etc/config filesystem"
+    find /etc/config/ -type f | while read f; do rm -f "$f" >& /dev/null; done
+    find /etc/config/ -type d | while read d; do rm -rf "$d" >& /dev/null; done
+    # replace this so that we can restore from USB if needed
+    touch /etc/config/.init
+else
+    # Mark the config as initialised so that initconf will not run
+    touch /etc/config/.initialised
+fi
+
+# Copy over any files from /etc/default that are not in /etc/config
+
+(
+    cd /etc/default
+    echo "Restoring files from /etc/default to /etc/config"
+    find ./ -type d | while read d
+    do
+	if [ ! -d /etc/config/"$d" ]; then
+	    mkdir -p -m 0755 /etc/config/"$d"
+	fi
+    done
+    find ./ -type f | while read f
+    do
+	if [ ! -f /etc/config/"$f" ]; then 
+	    cp -a "$f" /etc/config/"$f"
+	fi
+    done
+    find ./ -type l | while read f
+    do
+    if [ ! -L /etc/config/"$f" ]; then
+        cp -a "$f" /etc/config/"$f"
+    fi
+    done
+)
+# If we have a reset config, we should check if we need to replace the root passwd hash 
+if [ "$RESET_CONFIG" == "1" ]; then
+    if [ -f /bin/setfset ]; then
+        PWD_HASH=`setfset -r | grep root_pwd_hash= | cut -f2 -d'='`
+	if [ -n "$PWD_HASH" ]; then
+	    echo "root:$PWD_HASH:0:0:Super User:/:/bin/sh" > /tmp/passwd.tmp
+	    grep -v root: /etc/config/passwd >> /tmp/passwd.tmp
+	    mv /tmp/passwd.tmp /etc/config/passwd
+	    config -s config.users.user1.password_nvflash=on
+	fi
+    fi	
+fi
+
+if [ -f /etc/config/.init ]; then
+    # Load custom default config from USB
+    rm /etc/config/.init
+    if [ -f /proc/bus/usb/devices -a -f /etc/scripts/backup-usb ]; then
+	if grep usb-storage /proc/bus/usb/devices > /dev/null 2>&1; then
+	    /bin/sh /etc/scripts/backup-usb load-default
+	fi
+    fi
+fi
+
+# Run the i/o port configuration script
+if [ -f /bin/ioc ]; then
+	ioc -l &> /dev/null
+fi
+
+# Probe for sensor enabled power supplies
+if [ -f /bin/psmon ]; then
+	psmon -c
+fi
+
+progressbar 35
+
+# Run the serial port mapping and config rc script
+progressbar 40
+sh /etc/rc.serial "$MODEL"
+
+# How many ports did it find ?
+
+NPORTS=$(wc -l /var/run/serial-ports | sed 's/[ \t]*\([0-9]*\).*/\1/')
+		
+progressbar 50
+# Model specific configuration
+if [ "$MODEL" = im42xx ]; then
+
+    # Management LAN switch setup
+    device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+    if [ "$device" = "rtl8326" -o "$device" = "rtl8309" ]; then
+        # Initialise previously detected switch
+        /bin/bash /etc/scripts/switch-config reset
+    elif [ "$device" = "unknown" -o -z "$device" ]; then
+	if [ -n "$ASIX" ]; then
+	    # We've got USB ASIX88172's on the usb bus, we're a 
+	    # IM4216-34 
+            config -s config.interfaces.lan.device.type=rtl8309 \
+                    -s config.interfaces.lan.disabled=on
+
+            /bin/bash /etc/scripts/switch-config reset
+
+            # Disable the oob/fo port by default. 
+            mode=$(config -g config.interfaces.oobfo.mode | cut -f2- -d' ')
+            if [ -z "$mode" ]; then
+                config -s config.interfaces.oobfo.disabled=on
+            fi
+	elif /bin/bash /etc/scripts/switch-config ping; then
+	    # Fresh unit, detect switch
+            # Initialise switch
+            /bin/bash /etc/scripts/switch-config reset
+
+            # Initialise switch configuration
+            config -s config.interfaces.lan.device.type=rtl8326 \
+                    -s config.interfaces.lan.disabled=on
+
+            # Disable the oob/fo port by default. 
+            mode=$(config -g config.interfaces.oobfo.mode | cut -f2- -d' ')
+            if [ -z "$mode" ]; then
+                config -s config.interfaces.oobfo.disabled=on
+            fi
+        else
+            # No switch detected
+            config -s config.interfaces.lan.device.type=unknown
+        fi
+    fi
+elif [ "$MODEL" = acm550x ]; then
+    # detect or configure settings based on devices and setfset
+    device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+    if [ -z "$device" ]; then
+	KSZ8895=no
+        if [ -x /bin/setfset ]; then
+	    ETHERNET=`/bin/setfset -qe | cut -f2 -d" "`
+	    if [ "$ETHERNET" == "switch" ]; then
+		KSZ8895=yes
+	    fi
+	fi
+
+	if dmesg | grep KSZ8895 >& /dev/null; then
+	    KSZ8895=yes
+	fi
+
+        if [ "$KSZ8895" = yes ]; then
+            config -s config.interfaces.lan.device.type=ksz8895 \
+                    -s config.interfaces.lan.disabled=on
+
+            # Disable the oob/fo port by default. 
+            mode=$(config -g config.interfaces.oobfo.mode | cut -f2- -d' ')
+            if [ -z "$mode" ]; then
+                config -s config.interfaces.oobfo.disabled=on
+            fi
+        else 
+            # No switch detected
+            config -s config.interfaces.lan.device.type=ks8692 \
+		-s config.interfaces.lan.disabled=on
+        fi
+    fi
+    
+    # detection finished, do set up
+    device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+    if [ "$device" = "ksz8895" ]; then
+        # Initialise previously detected switch
+        /bin/bash /etc/scripts/switch-config reset
+	> /var/run/.switch/switch_is_ksz8895
+    elif [ "$device" = "ks8692" ]; then
+        ETHERNET=`/bin/setfset -qe | cut -f2 -d" "`
+	if [ "$ETHERNET" == "dual" ]; then
+            > /var/run/.switch/ethernet_is_dual
+	elif [ "$ETHERNET" == "single" ]; then
+	    > /var/run/.switch/ethernet_is_single
+	fi
+    fi
+elif [ "$MODEL" = im4004 ]; then
+    /bin/bash /etc/scripts/switch-config reset
+    device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+    if [ -z "$device" ]; then
+        # Initialise switch configuration
+        config -s config.interfaces.lan.device.type=ks8695 \
+                -s config.interfaces.lan.disabled=on
+
+        # Disable the oob/fo port by default. 
+        mode=$(config -g config.interfaces.oobfo.mode | cut -f2- -d' ')
+        if [ -z "$mode" ]; then
+            config -s config.interfaces.oobfo.disabled=on
+        fi
+    fi
+elif [ -x /bin/setfset ]; then
+    ETHERNET=`/bin/setfset -qe | cut -f2 -d" "`
+    if [ "$ETHERNET" == "dual" ]; then
+        device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+        if [ -z "$device" ]; then
+            config -s config.interfaces.lan.device.type=ks8692 \
+                -s config.interfaces.lan.disabled=on
+        fi
+	> /var/run/.switch/ethernet_is_dual
+    elif [ "$ETHERNET" == "single" ]; then
+	> /var/run/.switch/ethernet_is_single
+    fi
+fi
+
+# Initialise wireless LAN
+if [ -f /bin/iwconfig ]; then
+    if [ -f /lib/modules/${KVERSION}/kernel/drivers/net/wireless/rt2x00/rt73usb.ko ]; then
+    	modprobe rt73usb 2> /dev/null
+    fi
+    if [ -f /lib/modules/${KVERSION}/kernel/drivers/net/wireless/rt2x00/rt2800usb.ko ]; then
+    	modprobe rt2800usb 2> /dev/null
+    fi
+    if [ -f /lib/modules/${KVERSION}/kernel/drivers/net/wireless/rt2x00/rt2800pci.ko ]; then
+    	modprobe rt2800pci 2> /dev/null
+    fi
+    # Disable the WLAN port by default
+    mode=$(config -g config.interfaces.wlan.mode | cut -f2- -d' ')
+    if [ -z "$mode" ]; then
+	config -s config.interfaces.wlan.disabled=on
+    fi
+fi
+
+# Initialise PCMCIA modem
+if [ -f /lib/modules/${KVERSION}/kernel/drivers/serial/serial_cs.ko ]; then
+    modprobe serial_cs
+fi
+
+
+
+progressbar 60
+# Set the host and model name as displayed to the user
+
+modelname=$(config -g config.system.model | cut -f2- -d' ')
+
+# if the model name hasn't been set at all, construct it from the model code
+if [ -z "$modelname" ]; then
+	# Pull the model code from the version string, then parse it
+	# and try to build up a more complete code if the product needs it.
+	# also, try and determine a model name for products that have a name.
+	modelcode="$MODEL"
+	if echo "$MODEL" | grep 41xx >& /dev/null; then
+		modelcode=`echo "$MODEL" | sed s/41xx/41$NPORTS/`
+	elif echo "$MODEL" | grep ^cms >& /dev/null; then
+		if [ -f /etc/virt ]; then
+			modelcode=vcms
+			modelname="VCMS"
+		else
+			modelcode=`echo "$MODEL" | sed s/xx/00/g`
+		fi
+	elif echo "$MODEL" | grep "^lighthouse" >& /dev/null; then
+		if [ -f /etc/virt ]; then
+			modelcode=lighthousevm
+			modelname="Lighthouse VM"
+		else
+			#hardware lighthouse boxes ... TBD
+			modelcode=lighthouse
+			modelname="Lighthouse"
+		fi
+	elif echo "$MODEL" | grep 61xx >& /dev/null; then
+		modelcode=`echo "$MODEL" | sed s/61xx/61$(printf %02d $NPORTS)/`
+	elif echo "$MODEL" | grep 42xx >& /dev/null; then
+		device=$(config -g config.interfaces.lan.device.type | cut -f2- -d' ')
+		if [ "$device" == "rtl8326" ]; then
+			modelcode=img42xx-25
+		elif [ "$device" == "rtl8309" ]; then
+			modelcode=im42xx-34
+		elif grep ^S:.*[oe]hci_hcd /proc/bus/usb/devices >& /dev/null; then
+			modelcode=imx42xx
+		fi
+		modelcode=`echo "$modelcode" | sed s/xx/$(printf %02d $NPORTS)/`
+	elif echo "$MODEL" | grep im4004 >& /dev/null; then
+		modelcode=img4004-5
+	elif echo "$MODEL" | grep acm5 >& /dev/null; then
+		modelcode=`/bin/setfset -qm | cut -f2 -d" " | tr [A-Z] [a-z]`
+	elif echo "$MODEL" | grep sd4002 >& /dev/null; then
+		modelcode=`echo "$MODEL" | sed s/4002/400$NPORTS/`
+	fi
+
+	# if the new name has been specified explicitly, use that;
+	# otherwise, use the model code in all caps as the name
+	if [ -z "$modelname" ]; then
+		modelname=`echo "$modelcode" | tr '[a-z]' '[A-Z]'`
+	fi
+
+	config -s config.system.model="$modelname"
+fi
+
+if [ -f /etc/config/hostname ]; then
+    hostname=`cat /etc/config/hostname`
+else
+    hostname=`echo "$modelname" | tr '[A-Z]' '[a-z]' | tr ' ' '-'`
+fi
+hostname "$hostname"
+
+# Load IPv6 kernel support if built as modules
+if [ -f /lib/modules/${KVERSION}/kernel/net/ipv6/ipv6.ko ]; then
+	modprobe ipv6
+	for m in $(ls -1 /lib/modules/${KVERSION}/kernel/net/ipv6/netfilter); do
+		modprobe `echo $m | cut -f1 -d"."`
+	done
+fi
+
+if [ ! -d /etc/config/users ]; then
+    rm -rf /etc/config/users
+    mkdir -p /etc/config/users
+fi
+
+progressbar 70
+echo "Syncing the system clock with the RTC"
+hwclock --hctosys --utc 2> /dev/null
+
+if [ -f /etc/scripts/migrate ]; then
+    NPORTS=$NPORTS MODEL=$MODEL sh /etc/scripts/migrate
+fi
+
+progressbar 80
+sh /etc/netstart
+sh /etc/rc.firewall
+
+progressbar 90
+if [ -f /etc/scripts/system-fix-groups ]; then
+    echo "Checking for standard system groups"
+    sh /etc/scripts/system-fix-groups
+fi
+if [ -f /etc/scripts/system-fix-users ]; then
+    echo "Checking for standard system users"
+    sh /etc/scripts/system-fix-users
+fi
+if [ -x /sbin/syslogd ]; then
+    echo "Starting syslogd"
+    /sbin/syslogd
+    /sbin/klogd
+fi
+if [ -x /bin/portmap ]; then
+    echo "Starting RPC portmapper"
+    /bin/portmap &
+fi
+if [ -f /etc/config/crontab.root ]; then
+    echo "Configuring Cron Daemon"
+    crontab /etc/config/crontab.root
+fi
+if [ -x /bin/swmon ]; then
+    echo "Starting Switch Monitoring Daemon"
+    /bin/swmon
+fi
+if [ -x /bin/tftpd -a -f /etc/scripts/system-init-fileserver ]; then
+    echo "Initialising TFTP Server environment"
+    sh /etc/scripts/system-init-fileserver
+fi
+if [ -x /bin/dhcpd -a -f /etc/scripts/switch-config ]; then
+    echo "Initialising DHCP Server environment"
+    if [ "$MODEL" = im4004 ]; then
+	touch /var/run/dhcpd-eth1.2.leases
+    else
+	touch /var/run/dhcpd-eth1.leases
+    fi
+fi
+if [ -x /bin/pango-querymodules -a ! -f /etc/config/pango/pango.modules ]; then
+    [ -d /etc/config/pango ] || mkdir /etc/config/pango
+    pango-querymodules > /etc/config/pango/pango.modules
+fi
+
+progressbar 95
+if [ -x /bin/nagios ]; then
+    echo "Initialising Nagios Server environment"
+    mkdir /var/run/nagios
+    mkdir /var/run/nagvis
+    mkdir /var/run/cms
+    mkdir /var/log/nagios
+    mkdir /var/nvlog
+    mkdir -p /var/nvlog/nagios/log/archives
+    mkdir /var/nvlog/nagios/state
+    mkdir -p /var/spool/nagios/checkresults
+    chown nagios /var/log/nagios /var/run/nagios /var/spool/nagios/checkresults /var/run/cms
+
+    # Nagios command file
+    mkdir -p -m 2770 /var/run/nagios/rw
+    chown nagios:nagcmd /var/run/nagios/rw
+
+    ln -s /var/nvlog/nagios/log/archives /var/log/nagios/archives
+    ln -s /var/nvlog/nagios/state /var/state/nagios
+
+    # Fix permissions in romfs
+    chown -R nagios /var/nvlog/nagios
+    chown nagios /etc/config/nagios/resource.cfg
+    chown nagios:admin /etc/config/nagios/user
+    chmod 770 /etc/config/nagios/user
+    chown cms /etc/config/registrar/.ssh
+    chmod 700 /etc/config/registrar/.ssh
+
+    if [ ! -f /etc/config/nagios/.ssh/id_rsa ]; then
+	chown nagios /etc/config/nagios/.ssh
+	chmod 700 /etc/config/nagios/.ssh
+	/bin/su nagios -c "/bin/ssh-keygen -t rsa -f /etc/config/nagios/.ssh/id_rsa -N ''" >& /dev/null &
+    fi
+
+    ln -sf ndomod.user.cfg /etc/config/nagios/ndomod.cfg
+fi
+
+echo "Running product specific configuration"
+if [ -f /etc/scripts/initconf ]; then
+   bash -x /etc/scripts/initconf
+fi
+
+(
+echo 
+echo "Welcome to your Opengear $modelname device. This is the provisioning software to install the initial software onto your platform."
+echo 
+echo "This process will overwrite any data on the primary disk drive on the platform and set the machine up to run as an Opengear $modelname. The process will install the software to the harddrive and then require a reboot to take effect. Prompts will be given along the way as needed."
+echo 
+
+while true; do
+	echo "To install Opengear $modelname to this machine, type INSTALL"
+	echo "To get a console, type CONSOLE"
+	read -p ">" CONFIRM
+	if [ "$CONFIRM" == "INSTALL" ]; then
+		# Place holder - do the install here
+		echo "    Continuing to install Opengear $modelname software."
+		echo
+
+		# Mount /dev/sdb4, and then execute install.sh
+		mkdir -p /var/mnt/usb
+
+		if [ ! -d /var/mnt/usb ]; then
+			echo "    ERROR: failed making mount point /var/mnt/usb"
+			break
+		fi 
+
+		if ! mount /dev/sdb4 /var/mnt/usb; then 
+			echo "    ERROR: failed mounting USB stick"
+			break
+		fi
+
+		if [ ! -f /var/mnt/usb/install.sh ]; then
+			echo "    ERROR: install.sh not found"
+			break
+		fi
+
+		exec bash /var/mnt/usb/install.sh
+	elif [ "$CONFIRM" == "CONSOLE" ]; then
+		echo "    Not installing Opengear $modelname."  
+		break
+	fi
+done
+) < /dev/console
+
+progressbar 99
+if [ -f /etc/config/rc.local ]; then
+    sh /etc/config/rc.local
+fi
+
+progressbar 100
+exit 0

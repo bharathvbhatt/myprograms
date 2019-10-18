@@ -1,0 +1,51 @@
+#
+# Automatically generated make config: don't edit
+# Dist builder
+#
+CONFIG_MODULES=y
+
+#
+# RaLink Drivers
+#
+# CONFIG_MODULES_RALINK_RT2860 is not set
+
+#
+# Asix USB Network Drivers
+#
+# CONFIG_MODULES_ASIX_AX88172A is not set
+
+#
+# FSZ8692 Feature reg control
+#
+# CONFIG_MODULES_KSZFEAT is not set
+
+#
+# Gobi WWAN Drivers
+#
+CONFIG_MODULES_GOBINET=y
+
+#
+# Gobi Serial Drivers
+#
+CONFIG_MODULES_GOBISERIAL=y
+
+#
+# OCF Configuration
+#
+CONFIG_OCF_OCF=m
+# CONFIG_OCF_RANDOMHARVEST is not set
+# CONFIG_OCF_CRYPTODEV is not set
+CONFIG_OCF_CRYPTOSOFT=m
+# CONFIG_OCF_SAFE is not set
+# CONFIG_OCF_IXP4XX is not set
+# CONFIG_OCF_HIFN is not set
+# CONFIG_OCF_HIFNHIPP is not set
+# CONFIG_OCF_TALITOS is not set
+# CONFIG_OCF_EP80579 is not set
+# CONFIG_OCF_CRYPTOCTEON is not set
+CONFIG_OCF_KIRKWOOD=m
+# CONFIG_OCF_ARMADA370 is not set
+# CONFIG_OCF_C7108 is not set
+# CONFIG_OCF_UBSEC_SSB is not set
+# CONFIG_OCF_OCFNULL is not set
+# CONFIG_OCF_BENCH is not set

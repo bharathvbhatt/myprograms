@@ -1,0 +1,24 @@
+#!/bin/bash
+
+device=$1
+node=config.$1.ppp.dialer.phone1
+output=$(config -g $node)
+
+# Sanitise user input - use whitespace to delimit dial strings and
+# unescape commas in the dial strings
+numbers=$(echo ${output:${#node}} | \
+sed -e 's/[\t ]//g' -e 's/\([^\]\),/\1 /g' -e 's/\\,/,/g')
+
+retval=1
+
+logger -t $(basename $0) "numbers: $numbers"
+for number in $numbers
+do
+	logger -t $(basename $0) "dialing $number"
+	chat -v -T "$number" -f /etc/config/network/dialout.$device.chat
+	retval=$?
+	[[ $retval == 0 ]] && exit 0
+done
+
+logger -t $(basename $0) "failed, exit code: $retval"
+exit $retval

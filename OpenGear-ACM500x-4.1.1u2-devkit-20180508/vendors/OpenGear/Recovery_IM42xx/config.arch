@@ -1,0 +1,19 @@
+.EXPORT_ALL_VARIABLES:
+############################################################################
+
+LINUXTARGET = zImage
+
+# Enable this once we have no longer want to support old u-boot
+HW_PRODUCT = CM41XX
+
+ifneq ($(HW_PRODUCT), CM41XX)
+	KERNEL_EXTRA_CFLAGS = -DCONFIG_MACH_OLDCM41xx
+endif
+
+CPUFLAGS = -msoft-float
+
+############################################################################
+
+include $(ROOTDIR)/vendors/config/arm/config.arch
+
+############################################################################

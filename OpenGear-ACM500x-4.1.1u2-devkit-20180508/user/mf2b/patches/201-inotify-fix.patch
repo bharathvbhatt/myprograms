@@ -1,0 +1,43 @@
+Index: mf2b-1.1/mf2b.c
+===================================================================
+--- mf2b-1.1.orig/mf2b.c	2014-08-12 15:38:55.231586666 +1000
++++ mf2b-1.1/mf2b.c	2014-08-12 15:43:59.903588247 +1000
+@@ -246,6 +246,7 @@
+ int check_fd(struct f2b_desc *desc, int fd)
+ {
+ 	struct stat sbuf, fsbuf;
++	int retry;
+ 
+ 	if (fd < 0
+ 	    || fstat(fd, &fsbuf) < 0
+@@ -254,7 +255,15 @@
+ 	    || fsbuf.st_ino != sbuf.st_ino) {
+ 		if (fd >= 0)
+ 			close(fd);
+-		fd = open(desc->fname, O_RDONLY);
++		fd = -1;
++#define NRETRY 10
++		for (retry = 0; retry < NRETRY; retry--) {
++			fd = open(desc->fname, O_RDONLY);
++			if (fd != -1 || errno != ENOENT)
++			    break;
++			/* Try re-opening for up to 1 second */
++			usleep(1000000 / NRETRY);
++		}
+ 		if (fd >= 0)
+ 			lseek(fd, 0, SEEK_END);
+ 	}
+@@ -379,6 +388,13 @@
+ 				}
+ 				if (inev.mask & IN_MODIFY)
+ 					read_lines(&desc[i], desc[i].fd);
++				if (inev.mask & (IN_MOVE_SELF | IN_DELETE_SELF)) {
++					(void) close(desc[i].fd);
++					desc[i].fd = check_fd(&desc[i], -1);
++					inotify_rm_watch(pfd[i].fd, inev.wd);
++					inotify_add_watch(pfd[i].fd, desc[i].fname, INOTIFY_EVENTS);
++					read_lines(&desc[i], desc[i].fd);
++				}
+ 				if (inev.mask & ~IN_MODIFY)
+ 					desc[i].fd = check_fd(&desc[i], desc[i].fd);
+ 			}

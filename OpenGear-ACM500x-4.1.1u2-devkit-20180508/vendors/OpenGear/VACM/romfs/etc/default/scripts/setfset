@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo "ports=4"
+echo "power=external/dc"
+echo "pinout=cisco"
+echo "factory_opts=rs485"
+echo "sensors=1/2"
+echo "model=VACM"
+echo "serial_no=00000000000001"

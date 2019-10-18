@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# The max ports from feature set or based on model name stored in feature set
+# or configuration data
+# FIXME: this logic is duplicated in /etc/scripts/udev-serial.
+function max_ports() {
+	local ports
+	ports=$(setfset -qs 2>/dev/null)
+	ports=${ports#*: }
+	if [ -z "$ports" ]; then
+		local model
+		if model=$(setfset -qm 2>/dev/null) && [ -n "$model" ]; then
+			model="${model#*: }"
+		elif model=$(config -g config.system.model) && [ -n "$model" ]; then
+			model="${model#* }"
+		else
+			model="unknown96"
+		fi
+		# get count from name formats like:
+		# LES1516A, ACM7004-5, ACM5503, but NOT B095-004-1E
+		ports=$(echo $model | sed 's/[A-Z]*[0-9]*\([0-9][0-9]\).*/\1/g')
+		ports=${ports#0} # strip leading zero
+	fi
+	echo "$ports"
+}
+
+# Get port number of last static port
+PORT=$(max_ports)
+
+# Increment to get first dynamic port
+PORT=`expr $PORT + 1`
+
+# Set path to GPS NMEA stream device if it exists
+if [ -L /dev/cellnmea01 ]; then
+	NMEA="/dev/cellnmea01"
+fi
+
+# Handle any Modems with GPS serial ports
+if [ -n "$NMEA" ]; then
+	PNAME=`printf "port%02d" $PORT`
+	ln -s $NMEA /dev/$PNAME
+	echo "$PNAME --> $NMEA" >> /var/run/serial-ports
+	infod_client -s -o push -p config.ports.port$PORT\.dev.deflabel -d "GPS" &
+	infod_client -s -o push -p config.ports.port$PORT\.dev.typedesc -d "usb-af" &
+	PORT=`expr $PORT + 1`
+fi
+
+# Handle a single Cisco USB Console for now
+if [ -d "/sys/bus/usb/drivers" ]; then
+	/etc/scripts/usb-console-enum $PORT
+fi
+
+exit 0
+# this __MUST__ be at the VERY end of the file - do NOT move!!
+#
+# Local Variables:
+# c-basic-offset: 4
+# tab-width: 8
+# end:
+# vi: tabstop=8 shiftwidth=4 textwidth=79 noexpandtab

@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# Response to wait for
+DEFAULT_RESPONSE="OK"
+
+# Timeout in seconds
+DEFAULT_TIMEOUT=2
+
+logat()
+{
+	command="$1"
+	response="$2"
+	timeout="$3"
+	output=$( ( COMMAND="$command" RESPONSE="$response" \
+		/bin/chat -t $timeout -E -V -f /etc/scripts/command-chat \
+		< /dev/cellcommand01 > /dev/cellcommand01 ) 2>&1 )
+	echo "$output" | grep -v '^$'
+}
+
+if [ "$#" == "0" -o "$#" -gt 3 ]; then
+	echo "usage: $0 'AT-COMMAND' [RESPONSE] [TIMEOUT]"
+	echo " Hint: Use single quotes around AT command."
+	echo " Defalt RESPONSE is OK, default TIMEOUT is 2"
+	exit 1
+fi
+
+if [ "$#" -eq "3" ]; then
+	command="$1"
+	response="$2"
+	timeout=$3
+elif [ "$#" -eq "2" ]; then
+	command="$1"
+	response=$2
+	timeout="$DEFAULT_TIMEOUT"
+else
+	command="$1"
+	response="$DEFAULT_RESPONSE"
+	timeout="$DEFAULT_TIMEOUT"
+fi
+
+logat ${command} ${response} ${timeout}
+exit 0

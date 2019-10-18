@@ -1,0 +1,14 @@
+.EXPORT_ALL_VARIABLES:
+############################################################################
+
+LINUXTARGET = zImage
+
+HW_PRODUCT=ACM550x
+
+CPUFLAGS = -march=armv4t -marm -mtune=arm922t -mno-thumb-interwork -msoft-float -mabi=aapcs-linux -mfloat-abi=soft
+
+############################################################################
+
+include $(ROOTDIR)/vendors/config/arm/config.arch
+
+############################################################################

@@ -1,0 +1,170 @@
+#!/bin/sh
+######################################################################
+
+# Set the host and model name as displayed to the user
+hostname cm4001
+
+######################################################################
+
+# fix all the infrastructure things first
+
+mount -t proc proc /proc
+if [ -d /sys ]; then
+	mount -t sysfs sysfs /sys
+fi
+
+# use memory size in Kib to determine /var size
+
+MEMSIZE=`free | sed -ne 's/^ *Mem:  *\([^ ]*\) .*/\1/p'`
+if [ "${MEMSIZE}" -le 16384 ]; then
+    VARSIZE="256k"
+    CNFSIZE="512k"
+elif [ "${MEMSIZE}" -le 65536 ]; then
+    VARSIZE="512k"
+    CNFSIZE="512k"
+else
+    VARSIZE="50%"
+    CNFSIZE="20%"
+fi
+
+mount -t tmpfs -o size=${VARSIZE} tmpfs /var
+mkdir /var/tmp
+chmod 1777 /var/tmp
+mkdir /var/log
+mkdir /var/run
+mkdir /var/run/power
+mkdir /var/run/portmanager
+mkdir /var/run/cascade
+mkdir /var/run/sshforwards
+mkdir -p /var/run/config/mnt
+mkdir /var/state
+mkdir /var/lock
+mkdir /var/empty
+mkdir /var/dev
+mkdir -p /var/spool/cron/crontabs
+touch /var/log/wtmp
+touch /var/run/utmp
+chmod a-w /var/run/utmp
+mkdir /var/upload
+chmod 1700 /var/upload
+mount -t ramfs ramfs /var/upload
+
+# Set the interface MAC addressses now if we need to.
+if [ -f /etc/virt ]; then
+	:
+elif [ -x /bin/setifmac ]; then
+	setifmac
+elif [ -x /bin/setfset ]; then
+	MAC0=`setfset -q0 | cut -f5 -d" "`
+	ifconfig eth0 hw ether ${MAC0}
+	MAC1=`setfset -q1 | cut -f5 -d" "`
+	if [ -n "$MAC1" ]; then
+		ifconfig eth1 hw ether ${MAC1}
+	fi
+fi
+
+# Start up watchdogd
+if [ -e /dev/watchdog ]; then
+	watchdog /dev/watchdog
+fi
+
+KVERSION=$(uname -r)
+
+if [ -f /lib/modules/${KVERSION}/kernel/net/ipv4/netfilter/ip_tables.ko ]; then
+    modprobe ip_tables
+    modprobe nf_conntrack_tftp
+fi
+
+# Mount /dev/pts for Unix98 pty support
+if grep devpts /proc/filesystems > /dev/null; then
+    mount -t devpts /dev/devpts /dev/pts
+fi
+
+if [ -f /lib/modules/${KVERSION}/kernel/drivers/usb/host/usb-ohci.ko ]; then
+    modprobe usb-ohci
+fi
+if grep usbfs /proc/filesystems > /dev/null; then
+    mount -t usbfs usbfs /proc/bus/usb && sleep 2
+fi
+
+if [ -f /lib/modules/${KVERSION}/kernel/drivers/net/tun.ko ]; then
+    modprobe tun
+fi
+
+# Run the serial port mapping and config rc script 	 
+sh /etc/rc.serial "$MODEL"
+
+# mounting old /etc/config
+echo "Mounting /etc/config"
+# mount /etc/config as the last SpeedStor partition (USB get priority
+# over IDE) we need to delay a little for USB devices :-(
+
+if [ -f /proc/bus/usb/devices ]; then
+    sleep 2
+    if grep usb-storage /proc/bus/usb/devices > /dev/null 2>&1; then
+	sleep 5
+    fi
+fi
+if sfdisk -l 2>/dev/null | grep SpeedStor > /dev/null; then
+    DEV=`sfdisk -l 2>/dev/null | grep SpeedStor | tail -1 | awk '{ print $1 }'`
+    if mount -t ext3 $DEV /etc/config 2> /dev/null; then
+	:
+    elif mount -t vfat $DEV /etc/config 2> /dev/null; then
+	:
+    else
+	mke2fs -j $DEV
+	mount -t ext3 $DEV /etc/config
+    fi
+fi
+
+# if we managed to mount it we are done, otherwise try alternatives
+
+if mount | grep /etc/config > /dev/null; then
+    # it's mounted move on.
+    :
+elif grep jffs2 /proc/filesystems >&/dev/null; then
+    if ! mount -t jffs2 /dev/flash/configblock /etc/config; then
+	echo "Bad or corrupted configuration filesystem, recreating..."
+	eraseall /dev/flash/config
+	echo "Mounting /dev/flash/configblock on /etc/config"
+	if ! mount -t jffs2 /dev/flash/configblock /etc/config; then
+	    echo "Failed to create new configuration filesystem"
+	    echo "Falling back to temporary config filesystem"
+	    mount -t tmpfs -o size=512k tmpfs /etc/config
+	fi
+    fi
+else
+    echo "No JFFS2 support - mounting tmpfs as /etc/config"
+    mount -t tmpfs -o size=${CNFSIZE} tmpfs /etc/config
+fi
+
+touch /etc/config/.init
+umount /etc/config
+mount /etc/default /etc/config
+
+# How many ports did it find ? DON'T DELETE
+NPORTS=$(wc -l /var/run/serial-ports | sed 's/[ \t]*\([0-9]*\).*/\1/')
+
+sh /etc/netstart
+sh /etc/rc.firewall
+
+if [ -x /sbin/syslogd ]; then
+    echo "Starting syslogd"
+    /sbin/syslogd
+    /sbin/klogd
+fi
+if [ -x /bin/portmap ]; then
+    echo "Starting RPC portmapper"
+    /bin/portmap &
+fi
+if [ -f /etc/config/crontab.root ]; then
+    echo "Configuring Cron Daemon"
+    crontab /etc/config/crontab.root
+fi
+if [ -x /usr/sbin/crond ]; then
+    echo "Starting Cron Daemon"
+    /usr/sbin/crond -S &
+fi
+
+
+exit 0

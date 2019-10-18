@@ -1,0 +1,49 @@
+#!/bin/sh
+
+suffix=$1
+prefix="config.system.smtp"
+
+mailhost=$(config -g $prefix.server$suffix | cut -f2- -d' ')
+if [ -z "$mailhost" ]; then
+	exit 1
+fi
+fromaddr=$(config -g $prefix.sender$suffix | cut -f2- -d' ')
+if [ -z "$fromaddr" ]; then
+	fromaddr="alert@$(hostname)";
+fi
+subject=$(config -g $prefix.subject$suffix | cut -f2- -d' ')
+if [ -z "$subject" ]; then
+	subject="$SUBJECT"
+fi
+user=$(config -g $prefix.username$suffix | cut -f2- -d' ')
+pass=$(config -g $prefix.password$suffix | cut -f2- -d' ')
+mode=$(config -g $prefix.encryption$suffix | cut -f2- -d' ')
+port=$(config -g $prefix.port$suffix | cut -f2- -d' ')
+
+options="--connect-timeout=60"
+
+if [ ! -z $mode ]; then
+	case "$mode" in
+	"TLS")
+		options="$options --tls=on --tls-certcheck=off --tls-starttls=on"
+	;;
+	"SSL")
+		options="$options --tls=on --tls-certcheck=off --tls-starttls=off"
+	;;
+	esac
+fi
+
+if [ ! -z $user ]; then
+	options="$options --auth=on --user=$user --pass=$pass"
+fi
+
+if [ ! -z $port ]; then
+	options="$options --port=$port"
+fi
+
+echo "$BODY" | /bin/sh /etc/scripts/send-mail "$TOADDR" $fromaddr "$subject" $mailhost "$options"
+[ $? != 0 ] || exit 0
+
+# Failed, retry
+sleep 60
+exec "$0" "$@"

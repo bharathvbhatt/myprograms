@@ -1,0 +1,64 @@
+#!/bin/bash
+
+EXT_LINK=$2
+INT_INTF=$3
+EXT_INTF=`infod_client -o get -p config.$EXT_LINK.ppp.ifname | cut -f2`
+IP=`infod_client -o get -p config.$EXT_LINK.ppp.iplocal | cut -f2`
+GW=`infod_client -o get -p config.$EXT_LINK.ppp.ipgateway | cut -f2`
+if [ -z "$GW" ]; then
+	GW=`infod_client -o get -p config.$EXT_LINK.ppp.ipremote | cut -f2`
+fi
+TABLE=99
+
+# Packet selectors that will enable routing table $TABLE
+RULES=(
+	"iif $EXT_INTF"
+	"to $GW"
+	"to $IP"
+	"from $IP"
+	"from 127.0.1.1"
+)
+
+# The routes to put into routing table $TABLE
+ROUTES=(
+	"$IP     dev $INT_INTF"
+        "default dev $EXT_INTF"
+	"127.0.0.0/8 dev lo"
+)
+
+IPTABLES=(
+	"/bin/iptables -t nat -F IPPassthrough"
+	"/bin/iptables -t nat -A IPPassthrough -o $EXT_INTF -j SNAT --to-source=$IP"
+)
+
+case "$1" in
+	start)
+		logger -t ippassthough starting
+		# Remove interface addresses for proxy_arp
+		ip addr flush dev $EXT_INTF
+		# Setup policy routes for passthrough data
+		for r in "${ROUTES[@]}"; do ip route add $r table $TABLE; done
+		for r in "${RULES[@]}"; do ip rule add $r table $TABLE; done
+		# Set up SNAT rule for on-box traffic
+		rm /etc/config/fw.ippassthrough
+		for i in "${IPTABLES[@]}"; do echo $i >> /etc/config/fw.ippassthrough; done
+		. /etc/config/fw.ippassthrough
+		# Add a default route out for on-box traffic
+		ip route add default dev $EXT_INTF metric 10
+		echo "1" > /proc/sys/net/ipv4/conf/$EXT_INTF/route_localnet
+		echo "1" > /proc/sys/net/ipv4/conf/$INT_INTF/proxy_arp
+		;;
+	stop)
+		logger -t ippassthrough stopping
+		for r in "${RULES[@]}"; do ip rule del $r; done
+		rm /etc/config/fw.ippassthrough
+		ip route flush table $TABLE
+		ip addr flush dev $EXT_INTF
+		ifconfig $EXT_INTF $IP dstaddr $GW
+		echo "0" > /proc/sys/net/ipv4/conf/$INT_INTF/proxy_arp
+		;;
+	*)
+		echo "Usage: $0 start|stop linkname destination_interface"
+		exit 1
+esac
+exit 0

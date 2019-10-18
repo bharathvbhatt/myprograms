@@ -1,0 +1,68 @@
+#!/bin/sh
+
+if [ -z "$ALERT_PRIMARY" -o -z "$ALERT_SECONDARY" ]; then
+    echo "Script does not have mandatory environment"
+    exit 1
+fi
+
+# If there's a user-configured script, run it instead
+scripts[0]="/etc/config/scripts/network/failover-alert.${ALERT_PRIMARY}"
+scripts[1]="/etc/config/scripts/network/interface-failover-alert"
+for (( i=0 ; i < ${#scripts[@]} ; i++ )); do
+	if [ -f "${scripts[$i]}" ]; then
+		exec /bin/sh "${scripts[$i]}"
+	fi
+done
+
+retval=0
+
+snmp=$(config -g config.interfaces.$ROLE.failover.alert.snmp.enabled | cut -f2- -d' ')
+if [ "$snmp" == "on" ]; then
+
+    export OID="enterprises.opengear"
+    export AGENT=""
+    export UPTIME=""
+    export SPECIFIC_TYPE=".ogFailoverMib.ogFailoverMibObjects.ogfovrEvent.ogfovrEventTable"
+    export TRAP_NAME="ogfovrEventOccurred"
+    export NOTIFICATION_TYPE=".ogFailoverMib.ogFailoverMibNotificationPrefix.ogfovrMibNotifications"
+
+    /bin/sh /etc/scripts/alert-snmp \
+        ".ogfovrEventEntry.ogfovrEventPrimary" \
+        "s" \
+        "$ALERT_PRIMARY" \
+        ".ogfovrEventEntry.ogfovrEventSecondary" \
+        "s" \
+        "$ALERT_SECONDARY"
+
+    retval=$(( $? || $retval ))
+fi
+
+cms=$(config -g config.cms.enabled | cut -f2- -d' ')
+if [ "$cms" == "on" ]; then
+	alertnum=$(echo $ALERT_XMLID | sed 's/config.alerts.alert//')
+	nodename=$(config -g config.cms.node.name | cut -f2- -d' ')
+	/bin/run_check -c check_xmlalert_${alertnum}_${nodename}
+	retval=$(( $? || $retval ))
+fi
+
+for suffix in "" "2"; do
+
+	email=$(config -g config.interfaces.$ROLE.failover.alert.email$suffix | cut -f2- -d' ')
+	if [ -z "$email" ]; then
+		continue
+	fi
+
+	ipaddr=$(ifconfig $ALERT_SECONDARY | grep 'inet addr' | cut -f 2 -d':' | cut -f 1 -d' ')
+	if [ -z "$ipaddr" ]; then
+		ipaddr="unknown"
+	fi
+
+	export SUBJECT="Alert: failover on $(hostname)"
+	export TOADDR="$email"
+	export BODY="The $ROLE interface has failed over ($ALERT_PRIMARY to $ALERT_SECONDARY), IP address $ipaddr"
+
+	/bin/sh /etc/scripts/alert-email $suffix
+	retval=$(( $? || $retval ))
+done
+
+exit $retval
