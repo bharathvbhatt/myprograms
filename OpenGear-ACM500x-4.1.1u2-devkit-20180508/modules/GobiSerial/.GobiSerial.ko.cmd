@@ -1,1 +1,0 @@
-cmd_/home/build/opengear/modules/GobiSerial/GobiSerial.ko := arm-linux-gnueabi-20140823-ld -EL -r  -T /home/build/opengear/linux-3.x/scripts/module-common.lds --build-id  -o /home/build/opengear/modules/GobiSerial/GobiSerial.ko /home/build/opengear/modules/GobiSerial/GobiSerial.o /home/build/opengear/modules/GobiSerial/GobiSerial.mod.o

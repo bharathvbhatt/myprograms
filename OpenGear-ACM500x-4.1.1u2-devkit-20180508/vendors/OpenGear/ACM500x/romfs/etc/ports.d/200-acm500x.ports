@@ -1,7 +1,0 @@
-# ACM5002 ACM5003 ACM5004
-ignore - - /devices/platform/serial8250/tty/ttyS[0-3]
-port01 - 8p8c-f /devices/virtual/tty/ttyAM0 sercon
-port02 - 8p8c-f /devices/virtual/tty/ttyAM1
-port03 - 8p8c-f /devices/virtual/tty/ttyAM2
-port04 - 8p8c-f /devices/virtual/tty/ttyAM3
-# port04 is handled specially in udev-serial for ACM5003

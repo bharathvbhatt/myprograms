@@ -1,7 +1,0 @@
-#!/bin/sh
-
-/bin/ip6tables -N Services
-/bin/ip6tables -A Services --protocol tcp --destination-port 22 -j ACCEPT
-/bin/ip6tables -A Services --protocol tcp --destination-port 443 -j ACCEPT
-/bin/ip6tables -A Services --protocol icmpv6 --icmpv6-type echo-request -j ACCEPT
-/bin/ip6tables -A WanInput -j Services

@@ -1,9 +1,0 @@
-# This script is sourced by rc, and creates the required dev nodes for this platform,
-
-# Misc 
-mknod /dev/ipsec c 36 10
-mknod /dev/ledman c 126 0
-mknod /dev/crypto c 10 70
-
-
-

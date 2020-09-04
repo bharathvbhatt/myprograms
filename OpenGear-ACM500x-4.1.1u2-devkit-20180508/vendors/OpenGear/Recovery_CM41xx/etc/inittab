@@ -1,4 +1,0 @@
-inet:unknown:/bin/inetd
-fltd:unknown:/bin/flatfsd
-http:unknown:/sbin/lighttpd-angel -D -f /etc/config/lighttpd.conf 
-sshd:unknown:/bin/sshd -r -D -o AllowUsers=* -o AllowTcpForwarding=yes -o SDT=yes

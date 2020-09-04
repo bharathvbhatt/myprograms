@@ -1,3 +1,0 @@
-#!/bin/sh
-
-alias top="TERM=xterm top"

@@ -1,1 +1,0 @@
-CXXFLAGS += -DENGINE_DEFAULTTITLE='"Opengear Monitor"'

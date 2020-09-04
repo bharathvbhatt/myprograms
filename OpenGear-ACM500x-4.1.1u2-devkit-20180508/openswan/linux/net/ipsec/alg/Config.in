@@ -1,3 +1,0 @@
-#Placeholder
-source ../openswan/linux/net/ipsec/alg/Config.alg_aes.in
-source ../openswan/linux/net/ipsec/alg/Config.alg_cryptoapi.in

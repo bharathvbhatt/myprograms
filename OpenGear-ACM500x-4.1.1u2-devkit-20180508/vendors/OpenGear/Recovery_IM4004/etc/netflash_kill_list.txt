@@ -1,8 +1,0 @@
-sshd
-crond
-portmanager
-syslogd
-klogd
-alertd
-udhcpc
-

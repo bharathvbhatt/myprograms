@@ -1,5 +1,0 @@
-ip	0	IP
-icmp	1	ICMP
-igmp	2	IGMP
-tcp	6	TCP
-udp	17	UDP

@@ -1,2 +1,0 @@
-SUBSYSTEM=="tty", SUBSYSTEMS=="usb", DRIVERS=="cdc_acm", RUN+="/etc/scripts/udev-usbmodem"
-

@@ -1,3 +1,0 @@
-SUBSYSTEM=="tty",DEVPATH=="/devices/platform/serial8250/*",ENV{SERIAL_IGNORE_TTY}="true"
-SUBSYSTEM=="tty",DEVPATH=="/devices/virtual/tty/*",ENV{SERIAL_IGNORE_TTY}="true"
-

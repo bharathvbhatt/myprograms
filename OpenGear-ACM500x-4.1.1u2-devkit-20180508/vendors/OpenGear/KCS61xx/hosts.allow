@@ -1,4 +1,0 @@
-#
-# we allow local access to the config ports
-#
-8181: 127.0.0

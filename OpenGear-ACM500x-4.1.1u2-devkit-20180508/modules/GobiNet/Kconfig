@@ -1,8 +1,0 @@
-menu "Gobi WWAN Drivers"
-
-config MODULES_GOBINET
-  	tristate "GobiNet"
-	---help---
-	Gobi Network USB driver. Needed for MC77xx in QMI mode
-
-endmenu

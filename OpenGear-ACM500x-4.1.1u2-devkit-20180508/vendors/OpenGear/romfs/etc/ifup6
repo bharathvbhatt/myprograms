@@ -1,8 +1,0 @@
-#!/bin/sh
-
-#
-# Re-install/restore firewall rules
-#
-if [ -f /etc/rc.firewall6 ]; then
-	/bin/sh /etc/rc.firewall6
-fi

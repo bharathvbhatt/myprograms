@@ -1,8 +1,0 @@
-#!/bin/sh
-
-echo "Configuring IPv4 local port range"
-
-#
-# Set ephemeral port range to be above anything that is listening
-#
-echo "49152 65535" > /proc/sys/net/ipv4/ip_local_port_range 

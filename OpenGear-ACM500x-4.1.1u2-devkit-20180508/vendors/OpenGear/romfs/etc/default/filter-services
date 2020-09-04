@@ -1,7 +1,0 @@
-#!/bin/sh
-
-/bin/iptables -N Services
-/bin/iptables -A Services --protocol tcp --destination-port 22 -j ACCEPT
-/bin/iptables -A Services --protocol tcp --destination-port 443 -j ACCEPT
-/bin/iptables -A Services --protocol icmp --icmp-type echo-request -j ACCEPT
-/bin/iptables -A WanInput -j Services

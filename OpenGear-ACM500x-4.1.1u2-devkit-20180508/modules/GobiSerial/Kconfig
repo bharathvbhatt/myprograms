@@ -1,8 +1,0 @@
-menu "Gobi Serial Drivers"
-
-config MODULES_GOBISERIAL
-  	tristate "GobiSerial"
-	---help---
-	Gobi Serial USB driver. Needed for MC77xx in QMI mode
-
-endmenu
