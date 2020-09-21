@@ -12,8 +12,8 @@
 #include <util/delay.h>
 #include "uart.h"
 #include "spi_driver.h"
+#include "rfic_Init.h"
 
-extern FILE uartout;
 
 int main(void)
 {
@@ -21,14 +21,15 @@ int main(void)
 	uint8_t data=0;
 	spi_init();
     USART_Init();
-	
+	DDRB |=(1<<1);
+	PORTB &= ~(1<<1);
+    serialModeRx_init();
+	serialModeWrite();
     while (1) 
     {
-		
-		data=spi_readwrite(12);
-		printf("data is :%x\n",data);
-		_delay_ms(200);
-   }
+		 serialModeWrite();
+		 _delay_ms(1000);
+    }
 	return 0;
 }
 

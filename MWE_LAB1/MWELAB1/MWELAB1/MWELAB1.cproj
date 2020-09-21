@@ -148,6 +148,12 @@
     <Compile Include="main.c">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="rfic_Init.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="rfic_Init.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="spi_driver.c">
       <SubType>compile</SubType>
     </Compile>

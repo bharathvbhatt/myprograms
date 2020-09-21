@@ -4,6 +4,8 @@
 
 main.c
 
+rfic_Init.c
+
 spi_driver.c
 
 uart.c

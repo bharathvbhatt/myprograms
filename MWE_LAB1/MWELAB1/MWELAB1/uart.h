@@ -10,6 +10,9 @@
 #define UART_H_
 
 #include "avr/io.h"
+#include "stdio.h"
+
+extern FILE uartout;
 
 void USART_Init();
 void println(uint8_t message[]);

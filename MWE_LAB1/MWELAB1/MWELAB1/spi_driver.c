@@ -49,8 +49,8 @@ void spi_init()
 	CPHA : Setting this bit makes SCK zero when idle. 
 	SPI2x SPR1 SPR0 is 000 so the effective clock frequnecy is flck/4 ->250ns
 	*/
-   SPCR |= (1<<SPIE)|(1<<SPE)|(1<<MSTR)|(1<<SPR0)|(1<<SPR1) ; //|(1<<CPHA);
-  // SPSR |=(1<<SPI2X);
+   SPCR |= (1<<SPIE)|(1<<SPE)|(1<<MSTR);//|(1<<SPR0)|(1<<SPR1); //|(1<<CPHA);
+  SPSR |=(1<<SPI2X);
    /*Master mode SS(slave select) is made as output*/
    DDRB|=(1<<PINB2);
    DDRB |=(1<<1);
@@ -76,7 +76,7 @@ void spi_init()
  * ******************************************************************************************************************************************************/
 uint8_t spi_readwrite(uint8_t data)
 {
-
+   
    SPDR = data;
    while(!(SPSR & (1 << SPIF)));
    return SPDR;
